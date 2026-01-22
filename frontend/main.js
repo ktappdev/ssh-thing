@@ -112,8 +112,6 @@ function updateConnectionState(state) {
   const statusBarHost = document.getElementById("status-bar-host");
   const statusBarState = document.getElementById("status-bar-state");
   
-  if (!term) return;
-  
   switch (state.type) {
     case "Connecting":
       term.reset();
@@ -323,12 +321,12 @@ function openEditModal(id) {
     document.getElementById("auth-type").value = "password";
     document.getElementById("password-field").classList.remove("hidden");
     document.getElementById("key-field").classList.add("hidden");
-    document.getElementById("server-password").value = server.auth.password;
+    document.getElementById("server-password").value = server.auth.password || "";
   } else {
     document.getElementById("auth-type").value = "key";
     document.getElementById("password-field").classList.add("hidden");
     document.getElementById("key-field").classList.remove("hidden");
-    document.getElementById("server-key").value = server.auth.private_key;
+    document.getElementById("server-key").value = server.auth.private_key || "";
   }
 }
 
@@ -521,16 +519,6 @@ async function deleteSnippet(id) {
   }
 }
 
-document.getElementById("auth-type").addEventListener("change", (e) => {
-  if (e.target.value === "password") {
-    document.getElementById("password-field").classList.remove("hidden");
-    document.getElementById("key-field").classList.add("hidden");
-  } else {
-    document.getElementById("password-field").classList.add("hidden");
-    document.getElementById("key-field").classList.remove("hidden");
-  }
-});
-
 window.addEventListener("DOMContentLoaded", () => {
   initTheme();
   document.getElementById("theme-toggle").addEventListener("click", toggleTheme);
@@ -542,6 +530,15 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("add-snippet-btn").addEventListener("click", openSnippetModal);
   document.getElementById("snippet-cancel-btn").addEventListener("click", closeSnippetModal);
   document.getElementById("snippet-form").addEventListener("submit", saveSnippet);
+  document.getElementById("auth-type").addEventListener("change", (e) => {
+    if (e.target.value === "password") {
+      document.getElementById("password-field").classList.remove("hidden");
+      document.getElementById("key-field").classList.add("hidden");
+    } else {
+      document.getElementById("password-field").classList.add("hidden");
+      document.getElementById("key-field").classList.remove("hidden");
+    }
+  });
   loadServers();
   loadSnippets();
 
