@@ -1,5 +1,6 @@
-use russh::client::{Config, Handler, Handle};
+use russh::client::{Config, Handler, Handle, Msg};
 use russh::keys;
+use russh::Channel;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -39,6 +40,29 @@ pub enum AuthMethod {
 }
 
 pub type SshSession = Handle<SshClientHandler>;
+
+#[derive(Debug)]
+pub struct PtyShell {
+    pub channel: Channel<Msg>,
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PtyConfig {
+    pub term: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl Default for PtyConfig {
+    fn default() -> Self {
+        Self {
+            term: "xterm-256color".to_string(),
+            width: 80,
+            height: 24,
+        }
+    }
+}
 
 pub async fn connect_ssh(
     app: &AppHandle,
@@ -107,6 +131,45 @@ pub async fn disconnect_ssh(app: &AppHandle) -> Result<(), String> {
     app.emit("connection-state", ConnectionState::Disconnected)
         .map_err(|e| format!("Failed to emit event: {}", e))?;
     Ok(())
+}
+
+pub async fn open_pty_shell(
+    app: &AppHandle,
+    session: &mut SshSession,
+    config: &PtyConfig,
+) -> Result<PtyShell, String> {
+    app.emit("connection-state", ConnectionState::Connected)
+        .map_err(|e| format!("Failed to emit event: {}", e))?;
+    
+    let channel = session
+        .channel_open_session()
+        .await
+        .map_err(|e| format!("Failed to open channel: {}", e))?;
+    
+    channel
+        .request_pty(
+            false,
+            &config.term,
+            config.width,
+            config.height,
+            0,
+            0,
+            &[],
+        )
+        .await
+        .map_err(|e| format!("Failed to request PTY: {}", e))?;
+    
+    channel
+        .request_shell(true)
+        .await
+        .map_err(|e| format!("Failed to request shell: {}", e))?;
+    
+    let shell = PtyShell {
+        channel,
+        id: uuid::Uuid::new_v4().to_string(),
+    };
+    
+    Ok(shell)
 }
 
 
@@ -196,6 +259,20 @@ async fn disconnect_from_server(app: AppHandle) -> Result<(), String> {
     disconnect_ssh(&app).await
 }
 
+#[tauri::command]
+async fn open_shell(
+    app: AppHandle,
+    server: ServerConnection,
+    config: Option<PtyConfig>,
+) -> Result<String, String> {
+    let pty_config = config.unwrap_or_default();
+    let mut session = connect_ssh(&app, &server.host, server.port, &server.user, &server.auth).await?;
+    
+    let _channel = open_pty_shell(&app, &mut session, &pty_config).await?;
+    
+    Ok(format!("PTY shell opened on {}", server.host))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -207,7 +284,8 @@ pub fn run() {
             update_server,
             delete_server,
             connect_to_server,
-            disconnect_from_server
+            disconnect_from_server,
+            open_shell
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
