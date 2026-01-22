@@ -2,19 +2,24 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="stylesheet" href="styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tauri App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'media',
+      }
+    </script>
     <script type="module" src="/main.js" defer></script>
   </head>
 
   <body>
-    <main class="container">
-      <h1>Welcome to Tauri</h1>
+    <main class="min-h-screen flex flex-col justify-center items-center pt-[10vh]">
+      <h1 class="text-center text-4xl font-bold mb-8">Welcome to Tauri</h1>
 
-      <div class="row">
+      <div class="flex justify-center gap-4 mb-6">
         <a href="https://tauri.app" target="_blank">
-          <img src="/assets/tauri.svg" class="logo tauri" alt="Tauri logo" />
+          <img src="/assets/tauri.svg" class="h-24 p-6 transition-all duration-300 hover:drop-shadow-[0_0_2em_#24c8db]" alt="Tauri logo" />
         </a>
         <a
           href="https://developer.mozilla.org/en-US/docs/Web/JavaScript"
@@ -22,16 +27,16 @@
         >
           <img
             src="/assets/javascript.svg"
-            class="logo vanilla"
+            class="h-24 p-6 transition-all duration-300 hover:drop-shadow-[0_0_2em_#ffe21c]"
             alt="JavaScript logo"
           />
         </a>
       </div>
-      <p>Click on the Tauri logo to learn more about the framework</p>
+      <p class="mb-6 text-gray-600 dark:text-gray-400">Click on the Tauri logo to learn more about the framework</p>
 
-      <form class="row" id="greet-form">
-        <input id="greet-input" placeholder="Enter a name..." />
-        <button type="submit">Greet</button>
+      <form id="greet-form" class="flex justify-center gap-2">
+        <input id="greet-input" placeholder="Enter a name..." class="rounded-lg border border-transparent px-4 py-2 text-base font-medium text-gray-900 bg-white transition-colors duration-250 shadow-sm focus:outline-none dark:text-white dark:bg-gray-800/60" />
+        <button type="submit" class="rounded-lg border border-transparent px-4 py-2 text-base font-medium text-gray-900 bg-white transition-colors duration-250 shadow-sm cursor-pointer hover:border-[#396cd8] active:border-[#396cd8] active:bg-gray-200 focus:outline-none dark:text-white dark:bg-gray-800/60 dark:active:bg-gray-800/40">Greet</button>
       </form>
       <p id="greet-msg"></p>
     </main>

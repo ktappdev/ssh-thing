@@ -49,9 +49,9 @@ Track progress by checking boxes as tasks are completed.
 ### Phase 1: Project Setup
 
 - [x] Create new Tauri project (`cargo create-tauri-app`)
-- [ ] Set up Rust workspace with `src-tauri` and frontend folders
-- [ ] Add dependencies: russh, tokio, serde, serde_json
-- [ ] Configure tauri.conf.json for window size, title, etc.
+- [x] Set up Rust workspace with `src-tauri` and frontend folders
+- [x] Add dependencies: russh, tokio, serde, serde_json
+- [x] Configure tauri.conf.json for window size, title, etc.
 - [ ] Set up basic frontend (index.html with Tailwind or CSS framework)
 - [ ] Test build and run (`cargo tauri dev`)
 
