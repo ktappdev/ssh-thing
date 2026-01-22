@@ -10,6 +10,7 @@ use tokio::sync::Mutex;
 use std::collections::HashMap;
 
 const SERVERS_FILE: &str = "servers.json";
+const SNIPPETS_FILE: &str = "snippets.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ConnectionState {
@@ -59,6 +60,7 @@ pub struct PtyConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Snippet {
+    pub id: String,
     pub name: String,
     pub command: String,
     pub description: Option<String>,
@@ -223,6 +225,34 @@ fn save_servers(app_dir: &PathBuf, servers: &[ServerConnection]) -> Result<(), S
     Ok(())
 }
 
+fn get_snippets_path(app_dir: &PathBuf) -> PathBuf {
+    app_dir.join(SNIPPETS_FILE)
+}
+
+fn load_snippets(app_dir: &PathBuf) -> Result<Vec<Snippet>, String> {
+    let path = get_snippets_path(app_dir);
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read snippets file: {}", e))?;
+    serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse snippets file: {}", e))
+}
+
+fn save_snippets(app_dir: &PathBuf, snippets: &[Snippet]) -> Result<(), String> {
+    let path = get_snippets_path(app_dir);
+    let parent = path.parent()
+        .ok_or_else(|| format!("Invalid path for snippets file"))?;
+    fs::create_dir_all(parent)
+        .map_err(|e| format!("Failed to create app data directory: {}", e))?;
+    let content = serde_json::to_string_pretty(snippets)
+        .map_err(|e| format!("Failed to serialize snippets: {}", e))?;
+    fs::write(&path, content)
+        .map_err(|e| format!("Failed to write snippets file: {}", e))?;
+    Ok(())
+}
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -263,6 +293,43 @@ async fn delete_server(app: AppHandle, id: String) -> Result<Vec<ServerConnectio
     servers.remove(index);
     save_servers(&app_dir, &servers)?;
     Ok(servers)
+}
+
+#[tauri::command]
+async fn get_snippets(app: AppHandle) -> Result<Vec<Snippet>, String> {
+    let app_dir = get_app_dir(&app)?;
+    load_snippets(&app_dir)
+}
+
+#[tauri::command]
+async fn add_snippet(app: AppHandle, snippet: Snippet) -> Result<Vec<Snippet>, String> {
+    let app_dir = get_app_dir(&app)?;
+    let mut snippets = load_snippets(&app_dir)?;
+    snippets.push(snippet);
+    save_snippets(&app_dir, &snippets)?;
+    Ok(snippets)
+}
+
+#[tauri::command]
+async fn update_snippet(app: AppHandle, id: String, snippet: Snippet) -> Result<Vec<Snippet>, String> {
+    let app_dir = get_app_dir(&app)?;
+    let mut snippets = load_snippets(&app_dir)?;
+    let index = snippets.iter().position(|s| s.id == id)
+        .ok_or_else(|| format!("Snippet with id {} not found", id))?;
+    snippets[index] = snippet;
+    save_snippets(&app_dir, &snippets)?;
+    Ok(snippets)
+}
+
+#[tauri::command]
+async fn delete_snippet(app: AppHandle, id: String) -> Result<Vec<Snippet>, String> {
+    let app_dir = get_app_dir(&app)?;
+    let mut snippets = load_snippets(&app_dir)?;
+    let index = snippets.iter().position(|s| s.id == id)
+        .ok_or_else(|| format!("Snippet with id {} not found", id))?;
+    snippets.remove(index);
+    save_snippets(&app_dir, &snippets)?;
+    Ok(snippets)
 }
 
 #[tauri::command]
@@ -380,6 +447,10 @@ pub fn run() {
             add_server,
             update_server,
             delete_server,
+            get_snippets,
+            add_snippet,
+            update_snippet,
+            delete_snippet,
             connect,
             disconnect,
             send_input,

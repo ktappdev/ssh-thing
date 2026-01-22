@@ -241,6 +241,130 @@ async function deleteServer(id) {
   }
 }
 
+let snippets = [];
+
+async function loadSnippets() {
+  try {
+    snippets = await invoke("get_snippets");
+    renderSnippetList();
+  } catch (error) {
+    console.error("Failed to load snippets:", error);
+  }
+}
+
+function renderSnippetList() {
+  const listEl = document.getElementById("snippet-list");
+  listEl.innerHTML = "";
+  snippets.forEach((snippet) => {
+    const li = document.createElement("li");
+    li.className = "flex flex-col bg-gray-50 dark:bg-gray-700 p-2 rounded cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600";
+    li.innerHTML = `
+      <div class="flex justify-between items-center">
+        <span class="font-medium truncate flex-1">${snippet.name}</span>
+        <div class="flex gap-1">
+          <button class="snippet-edit-btn text-blue-500 hover:text-blue-700 text-sm" data-id="${snippet.id}">Edit</button>
+          <button class="snippet-delete-btn text-red-500 hover:text-red-700 text-sm" data-id="${snippet.id}">Delete</button>
+        </div>
+      </div>
+      ${snippet.description ? `<p class="text-xs text-gray-500 dark:text-gray-400 truncate">${snippet.description}</p>` : ''}
+    `;
+    listEl.appendChild(li);
+
+    li.addEventListener("click", (e) => {
+      if (!e.target.classList.contains("snippet-edit-btn") && !e.target.classList.contains("snippet-delete-btn")) {
+        executeSnippet(snippet);
+      }
+    });
+  });
+
+  document.querySelectorAll(".snippet-edit-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openSnippetEditModal(btn.dataset.id);
+    });
+  });
+
+  document.querySelectorAll(".snippet-delete-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteSnippet(btn.dataset.id);
+    });
+  });
+}
+
+function executeSnippet(snippet) {
+  if (term && shellId) {
+    term.writeln(`\r\n\x1b[1;33mRunning snippet: ${snippet.name}\x1b[0m\r\n`);
+    term.write(snippet.command + "\r\n");
+  } else {
+    alert("Please connect to a server first");
+  }
+}
+
+function openSnippetModal() {
+  document.getElementById("snippet-modal").classList.remove("hidden");
+  document.getElementById("snippet-modal-title").textContent = "Add Snippet";
+  document.getElementById("snippet-form").reset();
+  document.getElementById("snippet-id").value = "";
+}
+
+function closeSnippetModal() {
+  document.getElementById("snippet-modal").classList.add("hidden");
+}
+
+function openSnippetEditModal(id) {
+  const snippet = snippets.find((s) => s.id === id);
+  if (!snippet) return;
+
+  document.getElementById("snippet-modal").classList.remove("hidden");
+  document.getElementById("snippet-modal-title").textContent = "Edit Snippet";
+  document.getElementById("snippet-id").value = snippet.id;
+  document.getElementById("snippet-name").value = snippet.name;
+  document.getElementById("snippet-command").value = snippet.command;
+  document.getElementById("snippet-description").value = snippet.description || "";
+}
+
+async function saveSnippet(e) {
+  e.preventDefault();
+
+  const id = document.getElementById("snippet-id").value || crypto.randomUUID();
+  const name = document.getElementById("snippet-name").value;
+  const command = document.getElementById("snippet-command").value;
+  const description = document.getElementById("snippet-description").value;
+
+  const snippet = {
+    id,
+    name,
+    command,
+    description: description || null,
+  };
+
+  try {
+    if (document.getElementById("snippet-id").value) {
+      await invoke("update_snippet", { id, snippet });
+    } else {
+      await invoke("add_snippet", { snippet });
+    }
+    closeSnippetModal();
+    loadSnippets();
+  } catch (error) {
+    console.error("Failed to save snippet:", error);
+    alert("Failed to save snippet: " + error);
+  }
+}
+
+async function deleteSnippet(id) {
+  if (!confirm("Are you sure you want to delete this snippet?")) return;
+
+  try {
+    await invoke("delete_snippet", { id });
+    loadSnippets();
+  } catch (error) {
+    console.error("Failed to delete snippet:", error);
+    alert("Failed to delete snippet: " + error);
+  }
+}
+
 document.getElementById("auth-type").addEventListener("change", (e) => {
   if (e.target.value === "password") {
     document.getElementById("password-field").classList.remove("hidden");
@@ -257,7 +381,11 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("cancel-btn").addEventListener("click", closeModal);
   document.getElementById("server-form").addEventListener("submit", saveServer);
   document.getElementById("disconnect-btn").addEventListener("click", disconnectFromServer);
+  document.getElementById("add-snippet-btn").addEventListener("click", openSnippetModal);
+  document.getElementById("snippet-cancel-btn").addEventListener("click", closeSnippetModal);
+  document.getElementById("snippet-form").addEventListener("submit", saveSnippet);
   loadServers();
+  loadSnippets();
 
   listen("connection-state", (event) => {
     updateConnectionState(event.payload);
