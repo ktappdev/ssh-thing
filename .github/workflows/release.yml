@@ -1,0 +1,110 @@
+name: Build Installers
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  build-windows:
+    name: Build Windows (.exe)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-gnu
+
+      - name: Install dependencies
+        run: |
+          rustup target add x86_64-pc-windows-gnu
+
+      - name: Build Tauri app
+        working-directory: ./src-tauri
+        run: cargo tauri build --target x86_64-pc-windows-gnu
+
+      - name: Upload Windows installer
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ env.upload_url }}
+          asset_path: src-tauri/target/release/bundle/msi/ssh-thing_0.1.0_x64_en-US.msi
+          asset_name: ssh-thing-windows-x64.exe
+          asset_content_type: application/vnd.microsoft.portable-executable
+
+  build-macos:
+    name: Build macOS (.dmg)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: aarch64-apple-darwin
+
+      - name: Build Tauri app
+        working-directory: ./src-tauri
+        run: cargo tauri build --target aarch64-apple-darwin
+
+      - name: Upload macOS installer
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ env.upload_url }}
+          asset_path: src-tauri/target/release/bundle/dmg/ssh-thing_0.1.0_aarch64.dmg
+          asset_name: ssh-thing-macos-arm64.dmg
+          asset_content_type: application/x-apple-diskimage
+
+  build-linux:
+    name: Build Linux (.deb, .AppImage)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev pkg-config build-essential libayatana-appindicator-dev
+
+      - name: Build Tauri app (DEB)
+        working-directory: ./src-tauri
+        run: cargo tauri build --target x86_64-unknown-linux-gnu --bundler deb
+
+      - name: Build Tauri app (AppImage)
+        working-directory: ./src-tauri
+        run: cargo tauri build --target x86_64-unknown-linux-gnu --bundler appimage
+
+      - name: Upload DEB installer
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ env.upload_url }}
+          asset_path: src-tauri/target/release/bundle/deb/ssh-thing_0.1.0_amd64.deb
+          asset_name: ssh-thing-linux-amd64.deb
+          asset_content_type: application/vnd.debian.binary-package
+
+      - name: Upload AppImage installer
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ env.upload_url }}
+          asset_path: src-tauri/target/release/bundle/appimage/ssh-thing_0.1.0_amd64.AppImage
+          asset_name: ssh-thing-linux-amd64.AppImage
+          asset_content_type: application/x-executable

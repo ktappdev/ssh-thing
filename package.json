@@ -6,6 +6,7 @@
   "scripts": {
     "tauri": "tauri",
     "build": "tauri build",
+    "build:all": "tauri build",
     "build:windows": "tauri build --target x86_64-pc-windows-msvc",
     "build:macos": "tauri build --target x86_64-apple-darwin",
     "build:linux": "tauri build --target x86_64-unknown-linux-gnu",

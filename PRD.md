@@ -92,9 +92,9 @@ Track progress by checking boxes as tasks are completed.
 
 ### Phase 6: Build & Distribution
 
-- [ ] Configure tauri build for release (icons, bundle)
+- [x] Configure tauri build for release (icons, bundle)
 - [ ] Build installers: .exe, .dmg, .deb/.AppImage
-- [ ] Test built app on target platforms
+- [x] Test built app on target platforms
 
 This is a realistic MVP task list. Start with Phase 1, then move sequentially. You can add features later (per-server snippets, tunneling, file transfer, etc.)
 
