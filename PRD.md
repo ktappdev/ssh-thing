@@ -65,8 +65,8 @@ Track progress by checking boxes as tasks are completed.
 
 ### Phase 3: SSH Connection & Terminal
 
-- [ ] Implement async SSH connect function using russh (support password & key auth)
-- [ ] Handle connection states: connecting, connected, disconnected, error
+- [x] Implement async SSH connect function using russh (support password & key auth)
+- [x] Handle connection states: connecting, connected, disconnected, error
 - [ ] Create channel for shell (PTY) using russh
 - [ ] Expose Rust commands: connect, disconnect, send_input, resize
 - [ ] Integrate xterm.js in frontend for terminal rendering

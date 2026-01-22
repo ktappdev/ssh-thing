@@ -4,9 +4,17 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 const SERVERS_FILE: &str = "servers.json";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ConnectionState {
+    Connecting,
+    Connected,
+    Disconnected,
+    Error(String),
+}
 
 pub struct SshClientHandler;
 
@@ -33,45 +41,72 @@ pub enum AuthMethod {
 pub type SshSession = Handle<SshClientHandler>;
 
 pub async fn connect_ssh(
+    app: &AppHandle,
     host: &str,
     port: u16,
     user: &str,
     auth: &AuthMethod,
 ) -> Result<SshSession, String> {
+    app.emit("connection-state", ConnectionState::Connecting)
+        .map_err(|e| format!("Failed to emit event: {}", e))?;
+    
     let config = Arc::new(Config::default());
     let addr = format!("{}:{}", host, port);
     
     let mut session = russh::client::connect(config, addr, SshClientHandler)
         .await
-        .map_err(|e| format!("Failed to connect: {}", e))?;
+        .map_err(|e| {
+            let _ = app.emit("connection-state", ConnectionState::Error(format!("Failed to connect: {}", e)));
+            format!("Failed to connect: {}", e)
+        })?;
     
     match auth {
         AuthMethod::Password { password } => {
             let auth_result = session
                 .authenticate_password(user, password)
                 .await
-                .map_err(|e| format!("Authentication failed: {}", e))?;
+                .map_err(|e| {
+                    let _ = app.emit("connection-state", ConnectionState::Error(format!("Authentication failed: {}", e)));
+                    format!("Authentication failed: {}", e)
+                })?;
             
             if !auth_result {
+                let _ = app.emit("connection-state", ConnectionState::Error("Password authentication failed".to_string()));
                 return Err("Password authentication failed".to_string());
             }
         }
         AuthMethod::Key { private_key } => {
             let key_pair = keys::decode_secret_key(private_key, None)
-                .map_err(|e| format!("Failed to decode private key: {}", e))?;
+                .map_err(|e| {
+                    let _ = app.emit("connection-state", ConnectionState::Error(format!("Failed to decode private key: {}", e)));
+                    format!("Failed to decode private key: {}", e)
+                })?;
             
             let auth_result = session
                 .authenticate_publickey(user, Arc::new(key_pair))
                 .await
-                .map_err(|e| format!("Key authentication failed: {}", e))?;
+                .map_err(|e| {
+                    let _ = app.emit("connection-state", ConnectionState::Error(format!("Key authentication failed: {}", e)));
+                    format!("Key authentication failed: {}", e)
+                })?;
             
             if !auth_result {
+                let _ = app.emit("connection-state", ConnectionState::Error("Key authentication failed".to_string()));
                 return Err("Key authentication failed".to_string());
             }
         }
     }
     
+    app.emit("connection-state", ConnectionState::Connected)
+        .map_err(|e| format!("Failed to emit event: {}", e))?;
+    
     Ok(session)
+}
+
+pub async fn disconnect_ssh(app: &AppHandle) -> Result<(), String> {
+    app.emit("connection-state", ConnectionState::Disconnected)
+        .map_err(|e| format!("Failed to emit event: {}", e))?;
+    Ok(())
 }
 
 
@@ -150,6 +185,17 @@ async fn delete_server(app: AppHandle, id: String) -> Result<Vec<ServerConnectio
     Ok(servers)
 }
 
+#[tauri::command]
+async fn connect_to_server(app: AppHandle, server: ServerConnection) -> Result<String, String> {
+    let _session = connect_ssh(&app, &server.host, server.port, &server.user, &server.auth).await?;
+    Ok(format!("Connected to {}", server.host))
+}
+
+#[tauri::command]
+async fn disconnect_from_server(app: AppHandle) -> Result<(), String> {
+    disconnect_ssh(&app).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -159,7 +205,9 @@ pub fn run() {
             get_servers,
             add_server,
             update_server,
-            delete_server
+            delete_server,
+            connect_to_server,
+            disconnect_from_server
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

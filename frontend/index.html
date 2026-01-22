@@ -24,8 +24,14 @@
       </aside>
 
       <main class="flex-1 p-6">
-        <h1 class="text-2xl font-bold mb-6">SSH Terminal</h1>
-        <div id="terminal" class="bg-black text-green-400 font-mono p-4 rounded h-[calc(100vh-120px)]">
+        <div class="flex justify-between items-center mb-6">
+          <h1 class="text-2xl font-bold">SSH Terminal</h1>
+          <div id="connection-status" class="text-sm text-gray-600 dark:text-gray-400">Disconnected</div>
+        </div>
+        <div class="flex justify-end mb-2">
+          <button id="disconnect-btn" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm hidden">Disconnect</button>
+        </div>
+        <div id="terminal" class="bg-black text-green-400 font-mono p-4 rounded h-[calc(100vh-160px)] overflow-auto">
           <p>Connect to a server to begin...</p>
         </div>
       </main>
