@@ -43,7 +43,7 @@ pub enum AuthMethod {
 
 pub type SshSession = Handle<SshClientHandler>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PtyShell {
     pub channel: Arc<Mutex<Channel<Msg>>>,
     pub id: String,
@@ -314,12 +314,23 @@ async fn connect(app: AppHandle, server: ServerConnection) -> Result<String, Str
 #[tauri::command]
 async fn disconnect(app: AppHandle, server_id: String) -> Result<(), String> {
     let state = app.state::<AppState>();
+
+    let shell_to_close = {
+        let shells = state.shells.lock().await;
+        shells.get(&server_id).cloned()
+    };
+
+    if let Some(shell) = shell_to_close {
+        let channel = shell.channel.lock().await;
+        let _ = channel.close().await;
+    }
+
     let mut sessions = state.sessions.lock().await;
     let mut shells = state.shells.lock().await;
-    
+
     shells.retain(|_, shell| shell.server_id != server_id);
     sessions.remove(&server_id);
-    
+
     disconnect_ssh(&app).await
 }
 
