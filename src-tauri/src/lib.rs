@@ -11,6 +11,7 @@ use std::collections::HashMap;
 
 const SERVERS_FILE: &str = "servers.json";
 const SNIPPETS_FILE: &str = "snippets.json";
+const SNIPPETS_TOML_FILE: &str = "snippets.toml";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ConnectionState {
@@ -64,6 +65,11 @@ pub struct Snippet {
     pub name: String,
     pub command: String,
     pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SnippetsToml {
+    snippets: Vec<Snippet>,
 }
 
 impl Default for PtyConfig {
@@ -232,27 +238,42 @@ fn get_snippets_path(app_dir: &PathBuf) -> PathBuf {
     app_dir.join(SNIPPETS_FILE)
 }
 
+fn get_snippets_toml_path(app_dir: &PathBuf) -> PathBuf {
+    app_dir.join(SNIPPETS_TOML_FILE)
+}
+
 fn load_snippets(app_dir: &PathBuf) -> Result<Vec<Snippet>, String> {
-    let path = get_snippets_path(app_dir);
-    if !path.exists() {
+    let toml_path = get_snippets_toml_path(app_dir);
+    let json_path = get_snippets_path(app_dir);
+
+    if toml_path.exists() {
+        let content = fs::read_to_string(&toml_path)
+            .map_err(|e| format!("Failed to read snippets TOML file: {}", e))?;
+        let toml_data: SnippetsToml = toml::from_str(&content)
+            .map_err(|e| format!("Failed to parse snippets TOML file: {}", e))?;
+        return Ok(toml_data.snippets);
+    }
+
+    if !json_path.exists() {
         return Ok(Vec::new());
     }
-    let content = fs::read_to_string(&path)
+    let content = fs::read_to_string(&json_path)
         .map_err(|e| format!("Failed to read snippets file: {}", e))?;
     serde_json::from_str(&content)
         .map_err(|e| format!("Failed to parse snippets file: {}", e))
 }
 
 fn save_snippets(app_dir: &PathBuf, snippets: &[Snippet]) -> Result<(), String> {
-    let path = get_snippets_path(app_dir);
-    let parent = path.parent()
+    let toml_path = get_snippets_toml_path(app_dir);
+    let parent = toml_path.parent()
         .ok_or_else(|| format!("Invalid path for snippets file"))?;
     fs::create_dir_all(parent)
         .map_err(|e| format!("Failed to create app data directory: {}", e))?;
-    let content = serde_json::to_string_pretty(snippets)
-        .map_err(|e| format!("Failed to serialize snippets: {}", e))?;
-    fs::write(&path, content)
-        .map_err(|e| format!("Failed to write snippets file: {}", e))?;
+    let toml_data = SnippetsToml { snippets: snippets.to_vec() };
+    let content = toml::to_string_pretty(&toml_data)
+        .map_err(|e| format!("Failed to serialize snippets to TOML: {}", e))?;
+    fs::write(&toml_path, content)
+        .map_err(|e| format!("Failed to write snippets TOML file: {}", e))?;
     Ok(())
 }
 
