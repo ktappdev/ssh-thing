@@ -57,6 +57,13 @@ pub struct PtyConfig {
     pub height: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Snippet {
+    pub name: String,
+    pub command: String,
+    pub description: Option<String>,
+}
+
 impl Default for PtyConfig {
     fn default() -> Self {
         Self {
