@@ -1,9 +1,18 @@
+use russh::client::{Config, Handler, Handle};
+use russh::keys;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 
 const SERVERS_FILE: &str = "servers.json";
+
+pub struct SshClientHandler;
+
+impl Handler for SshClientHandler {
+    type Error = russh::Error;
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerConnection {
@@ -20,6 +29,51 @@ pub enum AuthMethod {
     Password { password: String },
     Key { private_key: String },
 }
+
+pub type SshSession = Handle<SshClientHandler>;
+
+pub async fn connect_ssh(
+    host: &str,
+    port: u16,
+    user: &str,
+    auth: &AuthMethod,
+) -> Result<SshSession, String> {
+    let config = Arc::new(Config::default());
+    let addr = format!("{}:{}", host, port);
+    
+    let mut session = russh::client::connect(config, addr, SshClientHandler)
+        .await
+        .map_err(|e| format!("Failed to connect: {}", e))?;
+    
+    match auth {
+        AuthMethod::Password { password } => {
+            let auth_result = session
+                .authenticate_password(user, password)
+                .await
+                .map_err(|e| format!("Authentication failed: {}", e))?;
+            
+            if !auth_result {
+                return Err("Password authentication failed".to_string());
+            }
+        }
+        AuthMethod::Key { private_key } => {
+            let key_pair = keys::decode_secret_key(private_key, None)
+                .map_err(|e| format!("Failed to decode private key: {}", e))?;
+            
+            let auth_result = session
+                .authenticate_publickey(user, Arc::new(key_pair))
+                .await
+                .map_err(|e| format!("Key authentication failed: {}", e))?;
+            
+            if !auth_result {
+                return Err("Key authentication failed".to_string());
+            }
+        }
+    }
+    
+    Ok(session)
+}
+
 
 fn get_servers_path(app_dir: &PathBuf) -> PathBuf {
     app_dir.join(SERVERS_FILE)
