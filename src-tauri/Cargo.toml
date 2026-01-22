@@ -26,7 +26,11 @@ russh = "0.46"
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4"] }
 futures = "0.3"
+async-trait = "0.1"
+tracing = "0.1"
 
 [dev-dependencies]
 serde_json = "1"
+tracing = { version = "0.1", features = ["attributes"] }
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 
