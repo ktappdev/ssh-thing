@@ -42,10 +42,13 @@
     },
     "linux": {
       "deb": {
-        "depends": []
+        "depends": ["libwebkit2gtk-4.0-dev", "libgtk-3-dev", "libayatana-appindicator-dev"]
       },
       "rpm": {
-        "depends": []
+        "depends": ["webkit2gtk3", "gtk3", "libappindicator-gtk3"]
+      },
+      "appimage": {
+        "bundleMediaFramework": true
       }
     },
     "macOS": {

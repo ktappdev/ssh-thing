@@ -1,10 +1,16 @@
 {
-  "name": "tauri-app",
+  "name": "ssh-thing",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build": "tauri build",
+    "build:windows": "tauri build --target x86_64-pc-windows-msvc",
+    "build:macos": "tauri build --target x86_64-apple-darwin",
+    "build:linux": "tauri build --target x86_64-unknown-linux-gnu",
+    "build:deb": "tauri build --target x86_64-unknown-linux-gnu --bundler deb",
+    "build:appimage": "tauri build --target x86_64-unknown-linux-gnu --bundler appimage"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"
