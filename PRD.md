@@ -53,7 +53,7 @@ Track progress by checking boxes as tasks are completed.
 - [x] Add dependencies: russh, tokio, serde, serde_json
 - [x] Configure tauri.conf.json for window size, title, etc.
 - [x] Set up basic frontend (index.html with Tailwind or CSS framework)
-- [ ] Test build and run (`cargo tauri dev`)
+- [x] Test build and run (`cargo tauri dev`)
 
 ### Phase 2: Server Connection Management
 
