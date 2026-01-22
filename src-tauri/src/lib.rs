@@ -13,7 +13,7 @@ const SERVERS_FILE: &str = "servers.json";
 const SNIPPETS_FILE: &str = "snippets.json";
 const SNIPPETS_TOML_FILE: &str = "snippets.toml";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ConnectionState {
     Connecting,
     Connected,
@@ -79,6 +79,172 @@ impl Default for PtyConfig {
             width: 80,
             height: 24,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json;
+
+    #[test]
+    fn test_server_connection_serialization() {
+        let server = ServerConnection {
+            id: "test-id".to_string(),
+            host: "192.168.1.1".to_string(),
+            port: 22,
+            user: "testuser".to_string(),
+            auth: AuthMethod::Password {
+                password: "testpass".to_string(),
+            },
+        };
+
+        let json = serde_json::to_string(&server).expect("Failed to serialize");
+        let deserialized: ServerConnection = serde_json::from_str(&json).expect("Failed to deserialize");
+
+        assert_eq!(server.id, deserialized.id);
+        assert_eq!(server.host, deserialized.host);
+        assert_eq!(server.port, deserialized.port);
+        assert_eq!(server.user, deserialized.user);
+        match (&server.auth, &deserialized.auth) {
+            (AuthMethod::Password { password: p1 }, AuthMethod::Password { password: p2 }) => {
+                assert_eq!(p1, p2);
+            }
+            _ => panic!("Auth method type mismatch"),
+        }
+    }
+
+    #[test]
+    fn test_key_auth_serialization() {
+        let server = ServerConnection {
+            id: "key-test".to_string(),
+            host: "server.example.com".to_string(),
+            port: 2222,
+            user: "admin".to_string(),
+            auth: AuthMethod::Key {
+                private_key: "-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----".to_string(),
+            },
+        };
+
+        let json = serde_json::to_string(&server).expect("Failed to serialize");
+        let deserialized: ServerConnection = serde_json::from_str(&json).expect("Failed to deserialize");
+
+        assert_eq!(server.id, deserialized.id);
+        assert_eq!(server.host, deserialized.host);
+        match (&server.auth, &deserialized.auth) {
+            (AuthMethod::Key { private_key: k1 }, AuthMethod::Key { private_key: k2 }) => {
+                assert_eq!(k1, k2);
+            }
+            _ => panic!("Auth method type mismatch"),
+        }
+    }
+
+    #[test]
+    fn test_snippet_serialization() {
+        let snippet = Snippet {
+            id: "snippet-1".to_string(),
+            name: "Test Snippet".to_string(),
+            command: "echo hello".to_string(),
+            description: Some("A test snippet".to_string()),
+        };
+
+        let json = serde_json::to_string(&snippet).expect("Failed to serialize");
+        let deserialized: Snippet = serde_json::from_str(&json).expect("Failed to deserialize");
+
+        assert_eq!(snippet.id, deserialized.id);
+        assert_eq!(snippet.name, deserialized.name);
+        assert_eq!(snippet.command, deserialized.command);
+        assert_eq!(snippet.description, deserialized.description);
+    }
+
+    #[test]
+    fn test_snippet_without_description() {
+        let snippet = Snippet {
+            id: "snippet-2".to_string(),
+            name: "No Description".to_string(),
+            command: "ls -la".to_string(),
+            description: None,
+        };
+
+        let json = serde_json::to_string(&snippet).expect("Failed to serialize");
+        let deserialized: Snippet = serde_json::from_str(&json).expect("Failed to deserialize");
+
+        assert_eq!(snippet.id, deserialized.id);
+        assert_eq!(snippet.name, deserialized.name);
+        assert_eq!(snippet.description, deserialized.description);
+    }
+
+    #[test]
+    fn test_pty_config_defaults() {
+        let config = PtyConfig::default();
+
+        assert_eq!(config.term, "xterm-256color");
+        assert_eq!(config.width, 80);
+        assert_eq!(config.height, 24);
+    }
+
+    #[test]
+    fn test_connection_state_serialization() {
+        let states = vec![
+            ConnectionState::Connecting,
+            ConnectionState::Connected,
+            ConnectionState::Disconnected,
+            ConnectionState::Error("Test error".to_string()),
+        ];
+
+        for state in states {
+            let json = serde_json::to_string(&state).expect("Failed to serialize");
+            let deserialized: ConnectionState = serde_json::from_str(&json).expect("Failed to deserialize");
+            assert_eq!(state, deserialized);
+        }
+    }
+
+    #[test]
+    fn test_server_connection_with_different_ports() {
+        let ports = vec![22, 2222, 443, 8080];
+
+        for port in ports {
+            let server = ServerConnection {
+                id: format!("server-{}", port),
+                host: "localhost".to_string(),
+                port,
+                user: "user".to_string(),
+                auth: AuthMethod::Password { password: "pass".to_string() },
+            };
+
+            assert_eq!(server.port, port);
+
+            let json = serde_json::to_string(&server).expect("Failed to serialize");
+            let deserialized: ServerConnection = serde_json::from_str(&json).expect("Failed to deserialize");
+            assert_eq!(deserialized.port, port);
+        }
+    }
+
+    #[test]
+    fn test_json_format_servers() {
+        let servers = vec![
+            ServerConnection {
+                id: "1".to_string(),
+                host: "host1.com".to_string(),
+                port: 22,
+                user: "user1".to_string(),
+                auth: AuthMethod::Password { password: "pass1".to_string() },
+            },
+            ServerConnection {
+                id: "2".to_string(),
+                host: "host2.com".to_string(),
+                port: 2222,
+                user: "user2".to_string(),
+                auth: AuthMethod::Key { private_key: "key-data".to_string() },
+            },
+        ];
+
+        let json = serde_json::to_string_pretty(&servers).expect("Failed to serialize");
+        let deserialized: Vec<ServerConnection> = serde_json::from_str(&json).expect("Failed to deserialize");
+
+        assert_eq!(servers.len(), deserialized.len());
+        assert_eq!(servers[0].id, deserialized[0].id);
+        assert_eq!(servers[1].id, deserialized[1].id);
     }
 }
 

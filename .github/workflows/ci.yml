@@ -1,0 +1,110 @@
+name: Cross-Platform CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-gnu' || matrix.os == 'macos-latest' && 'aarch64-apple-darwin' || 'x86_64-unknown-linux-gnu' }}
+          components: rustfmt, clippy
+
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev pkg-config build-essential
+
+      - name: Install dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          rustup target add x86_64-pc-windows-gnu
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build project
+        working-directory: ./src-tauri
+        run: cargo build --target ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-gnu' || matrix.os == 'macos-latest' && 'aarch64-apple-darwin' || 'x86_64-unknown-linux-gnu' }}
+
+      - name: Run tests
+        working-directory: ./src-tauri
+        run: cargo test --target ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-gnu' || matrix.os == 'macos-latest' && 'aarch64-apple-darwin' || 'x86_64-unknown-linux-gnu' }}
+
+      - name: Run clippy
+        working-directory: ./src-tauri
+        run: cargo clippy --target ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-gnu' || matrix.os == 'macos-latest' && 'aarch64-apple-darwin' || 'x86_64-unknown-linux-gnu' }} -- -D warnings
+
+  tauri-build:
+    name: Build Tauri app on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev pkg-config build-essential
+
+      - name: Install dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          rustup target add x86_64-pc-windows-gnu
+
+      - name: Install Tauri CLI
+        working-directory: .
+        run: cargo install tauri-cli
+
+      - name: Build Tauri app
+        working-directory: ./src-tauri
+        run: |
+          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+            cargo tauri build --target x86_64-pc-windows-gnu
+          elif [ "${{ matrix.os }}" == "macos-latest" ]; then
+            cargo tauri build --target aarch64-apple-darwin
+          else
+            cargo tauri build --target x86_64-unknown-linux-gnu
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-app-${{ matrix.os }}
+          path: src-tauri/target/release/bundle/

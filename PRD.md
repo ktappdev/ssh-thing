@@ -79,16 +79,16 @@ Track progress by checking boxes as tasks are completed.
 - [x] UI panel/sidebar for snippets: list, add/edit/delete
 - [x] Store snippets in JSON/TOML (separate file or same as connections)
 - [x] Expose Rust commands: CRUD snippets
-- [ ] Add "Run Snippet" button per snippet → send command to current SSH channel
+- [x] Add "Run Snippet" button per snippet → send command to current SSH channel
 
 ### Phase 5: Polish & Error Handling
 
-- [ ] Add status bar (connection state, host info)
-- [ ] Handle SSH errors (auth fail, timeout, disconnect) with UI alerts
-- [ ] Implement auto-scroll in terminal
-- [ ] Add dark/light theme toggle (CSS variables)
-- [ ] Basic keyboard shortcuts (Ctrl+C, etc.)
-- [ ] Test on at least two platforms (e.g., Linux + Windows)
+- [x] Add status bar (connection state, host info)
+- [x] Handle SSH errors (auth fail, timeout, disconnect) with UI alerts
+- [x] Implement auto-scroll in terminal
+- [x] Add dark/light theme toggle (CSS variables)
+- [x] Basic keyboard shortcuts (Ctrl+C, etc.)
+- [x] Test on at least two platforms (e.g., Linux + Windows)
 
 ### Phase 6: Build & Distribution
 
