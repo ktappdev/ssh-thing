@@ -61,7 +61,7 @@ Track progress by checking boxes as tasks are completed.
 - [x] Create UI form for adding/editing servers
 - [x] Store connections in a JSON/TOML file (load on startup, save on change)
 - [x] Expose Rust commands to frontend via Tauri's invoke system for CRUD on connections
-- [ ] Display list of saved servers in UI sidebar
+- [x] Display list of saved servers in UI sidebar
 
 ### Phase 3: SSH Connection & Terminal
 
