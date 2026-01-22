@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-app",
+  "productName": "ssh-thing",
   "version": "0.1.0",
-  "identifier": "com.kentaylor.tauri-app",
+  "identifier": "com.kentaylor.ssh-thing",
   "build": {
     "frontendDist": "../frontend"
   },
@@ -10,9 +10,12 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "tauri-app",
-        "width": 800,
-        "height": 600
+        "title": "SSH Thing",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true
       }
     ],
     "security": {
