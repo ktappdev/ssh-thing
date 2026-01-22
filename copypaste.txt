@@ -1,0 +1,55 @@
+To enable easy copying of text from the remote server to the local macOS clipboard in your Rust-based SSH terminal app (similar to Termius), implement support for the OSC 52 escape sequence. This allows remote commands to directly set the local clipboard without manual selection.
+How It Works
+
+OSC 52 is an ANSI escape code: \x1b]52;c;<base64-encoded-text>\x07 (or \a for bell).
+On the remote server, users can run a command like printf "\033]52;c;$(base64 <<< 'your text here')\a" to copy "your text here" to the local clipboard.
+Your app parses incoming terminal output, detects OSC 52 sequences, decodes the Base64, and uses a Rust crate to set the clipboard.
+
+Implementation in Rust
+Use the vte crate for ANSI parsing (it handles escape sequences) and arboard for clipboard access (works on macOS).
+
+Add dependencies in Cargo.toml:text[dependencies]
+vte = "0.11"
+arboard = "3.4"
+base64 = "0.22"  # For decoding
+In your terminal emulator loop, use vte::Parser to process incoming bytes from SSH. Implement a handler for OSC 52:Rustuse vte::{Parser, Perform};
+use arboard::Clipboard;
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
+
+struct Handler {
+    clipboard: Clipboard,
+}
+
+impl Perform for Handler {
+    // ... implement other methods as needed ...
+
+    fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {
+        if params.len() >= 2 && params[0] == b"52" && params[1].starts_with(b"c;") {
+            let encoded = &params[1][2..];  // Skip "c;"
+            if let Ok(decoded) = BASE64.decode(encoded) {
+                if let Ok(text) = String::from_utf8(decoded) {
+                    let _ = self.clipboard.set_text(text);  // Set clipboard
+                }
+            }
+        }
+    }
+}
+
+// In your main loop:
+let mut parser = Parser::new();
+let mut handler = Handler { clipboard: Clipboard::new().unwrap() };
+
+// When receiving bytes from SSH:
+for byte in received_bytes {
+    parser.advance(&mut handler, byte);
+}
+
+This assumes you have an SSH connection (e.g., via russh or thrussh crate) feeding bytes into the parser. Test with remote commands emitting OSC 52.
+Remote-Side Tools
+
+No special program needed; printf or echo -e works.
+For convenience, alias it in remote shell: alias clip='printf "\033]52;c;$(base64 <<< "$1")\a"' then clip "text".
+Tools like Vim/Neovim/tmux can be configured to yank via OSC 52 automatically.
+
+This is secure (clipboard ops are local) and works across SSH without extra channels. If you need more (e.g., bidirectional clipboard sync), look into X11 forwarding, but it's overkill and less reliable on macOS.

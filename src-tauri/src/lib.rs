@@ -1,19 +1,21 @@
 use async_trait::async_trait;
-use russh::client::{Config, Handle, Handler, Msg};
+use russh::client::{Config, Handle, Handler};
 use russh::keys;
-use russh::Channel;
+use russh::keys::PublicKeyBase64;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex};
 use tracing::{debug, info};
 
 const SERVERS_FILE: &str = "servers.json";
 const SNIPPETS_FILE: &str = "snippets.json";
 const SNIPPETS_TOML_FILE: &str = "snippets.toml";
+const KNOWN_HOSTS_FILE: &str = "known_hosts.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ConnectionState {
@@ -23,7 +25,35 @@ pub enum ConnectionState {
     Error(String),
 }
 
-pub struct SshClientHandler;
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectionStateEvent {
+    pub server_id: Option<String>,
+    pub shell_id: Option<String>,
+    pub state: ConnectionState,
+}
+
+pub struct SshClientHandler {
+    app: AppHandle,
+    host: String,
+    port: u16,
+    server_id: Option<String>,
+}
+
+fn emit_connection_state(
+    app: &AppHandle,
+    server_id: Option<&str>,
+    shell_id: Option<&str>,
+    state: ConnectionState,
+) -> Result<(), String> {
+    let payload = ConnectionStateEvent {
+        server_id: server_id.map(|s| s.to_string()),
+        shell_id: shell_id.map(|s| s.to_string()),
+        state,
+    };
+
+    app.emit("connection-state", payload)
+        .map_err(|e| format!("Failed to emit event: {}", e))
+}
 
 #[async_trait]
 impl Handler for SshClientHandler {
@@ -34,9 +64,79 @@ impl Handler for SshClientHandler {
     // before trusting a new key.
     async fn check_server_key(
         &mut self,
-        _server_public_key: &keys::key::PublicKey,
+        server_public_key: &keys::key::PublicKey,
     ) -> Result<bool, Self::Error> {
-        Ok(true)
+        let key_type = server_public_key.name().to_string();
+        let fingerprint = server_public_key.fingerprint();
+        let public_key_base64 = server_public_key.public_key_base64();
+        let host_key_id = format!("{}:{}", self.host, self.port);
+        let server_id = self.server_id.as_deref();
+
+        let app_dir = match get_app_dir(&self.app) {
+            Ok(dir) => dir,
+            Err(err) => {
+                let _ = emit_connection_state(&self.app, server_id, None, ConnectionState::Error(err));
+                return Ok(false);
+            }
+        };
+
+        let known_hosts = match load_known_hosts(&app_dir) {
+            Ok(hosts) => hosts,
+            Err(err) => {
+                let _ =
+                    emit_connection_state(&self.app, server_id, None, ConnectionState::Error(err));
+                return Ok(false);
+            }
+        };
+
+        if let Some(known) = known_hosts
+            .iter()
+            .find(|entry| entry.host == self.host && entry.port == self.port)
+        {
+            if known.fingerprint == fingerprint && known.key_type == key_type {
+                return Ok(true);
+            }
+
+            let mismatch = HostKeyMismatch {
+                host: self.host.clone(),
+                port: self.port,
+                key_type,
+                fingerprint,
+                stored_fingerprint: known.fingerprint.clone(),
+            };
+            let _ = self.app.emit("host-key-mismatch", mismatch);
+            return Ok(false);
+        }
+
+        let (tx, rx) = oneshot::channel();
+        let pending = PendingHostKey {
+            sender: tx,
+            key_type: key_type.clone(),
+            fingerprint: fingerprint.clone(),
+        };
+
+        let state = self.app.state::<AppState>();
+        {
+            let mut pending_map = state.pending_host_keys.lock().await;
+            pending_map.insert(host_key_id.clone(), pending);
+        }
+
+        let prompt = HostKeyPrompt {
+            host: self.host.clone(),
+            port: self.port,
+            key_type,
+            fingerprint,
+            public_key_base64,
+        };
+        let _ = self.app.emit("host-key-prompt", prompt);
+
+        let decision = rx.await.unwrap_or(false);
+
+        let state = self.app.state::<AppState>();
+        let mut pending_map = state.pending_host_keys.lock().await;
+        pending_map.remove(&host_key_id);
+
+        Ok(decision)
     }
 }
 
@@ -60,9 +160,9 @@ pub type SshSession = Handle<SshClientHandler>;
 
 #[derive(Debug, Clone)]
 pub struct PtyShell {
-    pub channel: Arc<Mutex<Channel<Msg>>>,
     pub id: String,
     pub server_id: String,
+    cmd_tx: mpsc::Sender<ShellCommand>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,6 +189,41 @@ struct SnippetsToml {
 pub struct TerminalOutput {
     pub shell_id: String,
     pub output: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnownHost {
+    pub host: String,
+    pub port: u16,
+    pub key_type: String,
+    pub fingerprint: String,
+    pub public_key_base64: String,
+    pub added_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HostKeyPrompt {
+    pub host: String,
+    pub port: u16,
+    pub key_type: String,
+    pub fingerprint: String,
+    pub public_key_base64: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HostKeyMismatch {
+    pub host: String,
+    pub port: u16,
+    pub key_type: String,
+    pub fingerprint: String,
+    pub stored_fingerprint: String,
+}
+
+#[derive(Debug)]
+enum ShellCommand {
+    SendInput(String),
+    Resize(u32, u32),
+    Close,
 }
 
 impl Default for PtyConfig {
@@ -471,11 +606,45 @@ mod tests {
         assert_eq!(deserialized.shell_id, "shell-789");
         assert_eq!(deserialized.output, "");
     }
+
+    #[test]
+    fn test_send_input_shell_not_found_error_message() {
+        let shell_id = "non-existent-shell-123";
+        let error_message = format!("Shell with id {} not found", shell_id);
+        assert_eq!(
+            error_message,
+            "Shell with id non-existent-shell-123 not found"
+        );
+    }
+
+    #[test]
+    fn test_send_input_shell_lookup_in_hashmap() {
+        use std::collections::HashMap;
+
+        let mut shells: HashMap<String, String> = HashMap::new();
+
+        let shell_id = "test-shell-456";
+        shells.insert(shell_id.to_string(), "shell-data".to_string());
+
+        let found_shell = shells.get(shell_id);
+        assert!(found_shell.is_some());
+        assert_eq!(found_shell.unwrap(), "shell-data");
+
+        let not_found_shell = shells.get("non-existent");
+        assert!(not_found_shell.is_none());
+    }
 }
 
 struct AppState {
     sessions: Mutex<HashMap<String, SshSession>>,
     shells: Mutex<HashMap<String, PtyShell>>,
+    pending_host_keys: Mutex<HashMap<String, PendingHostKey>>,
+}
+
+struct PendingHostKey {
+    sender: oneshot::Sender<bool>,
+    key_type: String,
+    fingerprint: String,
 }
 
 pub async fn connect_ssh(
@@ -484,6 +653,7 @@ pub async fn connect_ssh(
     port: u16,
     user: &str,
     auth: &AuthMethod,
+    server_id: Option<&str>,
 ) -> Result<SshSession, String> {
     let addr = format!("{}:{}", host, port);
 
@@ -496,19 +666,26 @@ pub async fn connect_ssh(
     #[cfg(debug_assertions)]
     debug!(host, port, user, auth_type, "Starting SSH connection");
 
-    app.emit("connection-state", ConnectionState::Connecting)
-        .map_err(|e| format!("Failed to emit event: {}", e))?;
+    emit_connection_state(app, server_id, None, ConnectionState::Connecting)?;
 
     let config = Arc::new(Config::default());
 
     #[cfg(debug_assertions)]
     debug!(%addr, "Establishing TCP connection");
 
-    let mut session = russh::client::connect(config, addr, SshClientHandler)
+    let handler = SshClientHandler {
+        app: app.clone(),
+        host: host.to_string(),
+        port,
+        server_id: server_id.map(|s| s.to_string()),
+    };
+    let mut session = russh::client::connect(config, addr, handler)
         .await
         .map_err(|e| {
-            let _ = app.emit(
-                "connection-state",
+            let _ = emit_connection_state(
+                app,
+                server_id,
+                None,
                 ConnectionState::Error(format!("Failed to connect: {}", e)),
             );
             format!("Failed to connect: {}", e)
@@ -523,16 +700,23 @@ pub async fn connect_ssh(
                 .authenticate_password(user, password)
                 .await
                 .map_err(|e| {
-                    let _ = app.emit(
-                        "connection-state",
-                        ConnectionState::Error(format!("Authentication failed: {}", e)),
+                    let _ = emit_connection_state(
+                        app,
+                        server_id,
+                        None,
+                        ConnectionState::Error(format!(
+                            "Authentication failed: {}",
+                            e
+                        )),
                     );
                     format!("Authentication failed: {}", e)
                 })?;
 
             if !auth_result {
-                let _ = app.emit(
-                    "connection-state",
+                let _ = emit_connection_state(
+                    app,
+                    server_id,
+                    None,
                     ConnectionState::Error("Password authentication failed".to_string()),
                 );
                 return Err("Password authentication failed".to_string());
@@ -546,8 +730,10 @@ pub async fn connect_ssh(
             debug!(user, "Authenticating with key");
 
             let key_pair = keys::decode_secret_key(private_key, None).map_err(|e| {
-                let _ = app.emit(
-                    "connection-state",
+                let _ = emit_connection_state(
+                    app,
+                    server_id,
+                    None,
                     ConnectionState::Error(format!("Failed to decode private key: {}", e)),
                 );
                 format!("Failed to decode private key: {}", e)
@@ -557,16 +743,20 @@ pub async fn connect_ssh(
                 .authenticate_publickey(user, Arc::new(key_pair))
                 .await
                 .map_err(|e| {
-                    let _ = app.emit(
-                        "connection-state",
+                    let _ = emit_connection_state(
+                        app,
+                        server_id,
+                        None,
                         ConnectionState::Error(format!("Key authentication failed: {}", e)),
                     );
                     format!("Key authentication failed: {}", e)
                 })?;
 
             if !auth_result {
-                let _ = app.emit(
-                    "connection-state",
+                let _ = emit_connection_state(
+                    app,
+                    server_id,
+                    None,
                     ConnectionState::Error("Key authentication failed".to_string()),
                 );
                 return Err("Key authentication failed".to_string());
@@ -580,20 +770,22 @@ pub async fn connect_ssh(
     #[cfg(debug_assertions)]
     info!(host, port, user, "SSH connection established successfully");
 
-    app.emit("connection-state", ConnectionState::Connected)
-        .map_err(|e| format!("Failed to emit event: {}", e))?;
+    emit_connection_state(app, server_id, None, ConnectionState::Connected)?;
 
     Ok(session)
 }
 
-pub async fn disconnect_ssh(app: &AppHandle, session: Option<SshSession>) -> Result<(), String> {
+pub async fn disconnect_ssh(
+    app: &AppHandle,
+    session: Option<SshSession>,
+    server_id: Option<&str>,
+) -> Result<(), String> {
     if let Some(s) = session {
         let _ = s
             .disconnect(russh::Disconnect::ByApplication, "disconnected", "en")
             .await;
     }
-    app.emit("connection-state", ConnectionState::Disconnected)
-        .map_err(|e| format!("Failed to emit event: {}", e))?;
+    emit_connection_state(app, server_id, None, ConnectionState::Disconnected)?;
     Ok(())
 }
 
@@ -606,8 +798,7 @@ pub async fn open_pty_shell(
     #[cfg(debug_assertions)]
     debug!(server_id, term = %config.term, width = config.width, height = config.height, "Opening PTY shell channel");
 
-    app.emit("connection-state", ConnectionState::Connected)
-        .map_err(|e| format!("Failed to emit event: {}", e))?;
+    emit_connection_state(app, Some(server_id), None, ConnectionState::Connected)?;
 
     let channel = session
         .channel_open_session()
@@ -633,10 +824,106 @@ pub async fn open_pty_shell(
     #[cfg(debug_assertions)]
     debug!(server_id, "Shell channel ready");
 
+    let (cmd_tx, mut cmd_rx) = mpsc::channel::<ShellCommand>(100);
+    let shell_id = uuid::Uuid::new_v4().to_string();
+    let shell_id_for_task = shell_id.clone();
+    let server_id_for_task = server_id.to_string();
+    let mut channel_for_task = channel;
+    let app_for_task = app.clone();
+
+    emit_connection_state(
+        app,
+        Some(server_id),
+        Some(&shell_id),
+        ConnectionState::Connected,
+    )?;
+
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                msg = channel_for_task.wait() => {
+                    let Some(msg) = msg else {
+                        #[cfg(debug_assertions)]
+                        debug!(shell_id = %shell_id_for_task, "Read loop stopped");
+                        break;
+                    };
+
+                    match msg {
+                        russh::ChannelMsg::Data { ref data } => {
+                            if let Ok(s) = std::str::from_utf8(data) {
+                                let payload = TerminalOutput {
+                                    shell_id: shell_id_for_task.clone(),
+                                    output: s.to_string(),
+                                };
+                                let _ = app_for_task.emit("terminal-output", payload);
+                            }
+                        }
+                        russh::ChannelMsg::ExitStatus { exit_status } => {
+                            let output =
+                                format!("\r\n\r\nConnection closed (exit code: {})\r\n", exit_status);
+                            #[cfg(debug_assertions)]
+                            debug!(
+                                shell_id = %shell_id_for_task,
+                                exit_status,
+                                "Connection closed with exit status"
+                            );
+                            let payload = TerminalOutput {
+                                shell_id: shell_id_for_task.clone(),
+                                output,
+                            };
+                            let _ = app_for_task.emit("terminal-output", payload);
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+                cmd = cmd_rx.recv() => {
+                    match cmd {
+                        Some(ShellCommand::SendInput(input)) => {
+                            if let Err(e) = channel_for_task.data(input.as_bytes()).await {
+                                #[cfg(debug_assertions)]
+                                debug!(shell_id = %shell_id_for_task, error = %e, "Failed to send input");
+                                let _ = app_for_task.emit(
+                                    "terminal-output",
+                                    TerminalOutput {
+                                        shell_id: shell_id_for_task.clone(),
+                                        output: format!("\r\nFailed to send input: {}\r\n", e),
+                                    },
+                                );
+                            }
+                        }
+                        Some(ShellCommand::Resize(width, height)) => {
+                            if let Err(e) = channel_for_task.window_change(width, height, 0, 0).await {
+                                #[cfg(debug_assertions)]
+                                debug!(
+                                    shell_id = %shell_id_for_task,
+                                    width,
+                                    height,
+                                    error = %e,
+                                    "Failed to resize shell"
+                                );
+                            }
+                        }
+                        Some(ShellCommand::Close) | None => {
+                            let _ = channel_for_task.close().await;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        let _ = emit_connection_state(
+            &app_for_task,
+            Some(&server_id_for_task),
+            Some(&shell_id_for_task),
+            ConnectionState::Disconnected,
+        );
+    });
+
     let shell = PtyShell {
-        channel: Arc::new(Mutex::new(channel)),
-        id: uuid::Uuid::new_v4().to_string(),
+        id: shell_id,
         server_id: server_id.to_string(),
+        cmd_tx,
     };
 
     Ok(shell)
@@ -646,10 +933,38 @@ fn get_servers_path(app_dir: &PathBuf) -> PathBuf {
     app_dir.join(SERVERS_FILE)
 }
 
+fn get_known_hosts_path(app_dir: &PathBuf) -> PathBuf {
+    app_dir.join(KNOWN_HOSTS_FILE)
+}
+
 fn get_app_dir(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_data_dir()
         .map_err(|e| format!("Failed to get app data directory: {}", e))
+}
+
+fn load_known_hosts(app_dir: &PathBuf) -> Result<Vec<KnownHost>, String> {
+    let path = get_known_hosts_path(app_dir);
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let content =
+        fs::read_to_string(&path).map_err(|e| format!("Failed to read known hosts file: {}", e))?;
+    serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse known hosts file: {}", e))
+}
+
+fn save_known_hosts(app_dir: &PathBuf, hosts: &[KnownHost]) -> Result<(), String> {
+    let path = get_known_hosts_path(app_dir);
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("Invalid path for known hosts file"))?;
+    fs::create_dir_all(parent)
+        .map_err(|e| format!("Failed to create app data directory: {}", e))?;
+    let content = serde_json::to_string_pretty(hosts)
+        .map_err(|e| format!("Failed to serialize known hosts: {}", e))?;
+    fs::write(&path, content).map_err(|e| format!("Failed to write known hosts file: {}", e))?;
+    Ok(())
 }
 
 fn load_servers(app_dir: &PathBuf) -> Result<Vec<ServerConnection>, String> {
@@ -720,6 +1035,13 @@ fn save_snippets(app_dir: &PathBuf, snippets: &[Snippet]) -> Result<(), String> 
     Ok(())
 }
 
+fn current_unix_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -741,6 +1063,64 @@ async fn add_server(
     servers.push(server);
     save_servers(&app_dir, &servers)?;
     Ok(servers)
+}
+
+#[tauri::command]
+async fn trust_host_key(
+    app: AppHandle,
+    host: String,
+    port: u16,
+    key_type: String,
+    fingerprint: String,
+    public_key_base64: String,
+) -> Result<(), String> {
+    let app_dir = get_app_dir(&app)?;
+    let mut known_hosts = load_known_hosts(&app_dir)?;
+
+    if let Some(existing) = known_hosts
+        .iter_mut()
+        .find(|entry| entry.host == host && entry.port == port)
+    {
+        existing.key_type = key_type.clone();
+        existing.fingerprint = fingerprint.clone();
+        existing.public_key_base64 = public_key_base64.clone();
+        existing.added_at = current_unix_timestamp();
+    } else {
+        known_hosts.push(KnownHost {
+            host: host.clone(),
+            port,
+            key_type: key_type.clone(),
+            fingerprint: fingerprint.clone(),
+            public_key_base64: public_key_base64.clone(),
+            added_at: current_unix_timestamp(),
+        });
+    }
+
+    save_known_hosts(&app_dir, &known_hosts)?;
+
+    let state = app.state::<AppState>();
+    let mut pending_map = state.pending_host_keys.lock().await;
+    let key = format!("{}:{}", host, port);
+    if let Some(pending) = pending_map.remove(&key) {
+        if pending.fingerprint != fingerprint || pending.key_type != key_type {
+            let _ = pending.sender.send(false);
+            return Err("Pending host key does not match trusted key".to_string());
+        }
+        let _ = pending.sender.send(true);
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn reject_host_key(app: AppHandle, host: String, port: u16) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let mut pending_map = state.pending_host_keys.lock().await;
+    let key = format!("{}:{}", host, port);
+    if let Some(pending) = pending_map.remove(&key) {
+        let _ = pending.sender.send(false);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -820,7 +1200,9 @@ async fn delete_snippet(app: AppHandle, id: String) -> Result<Vec<Snippet>, Stri
 
 #[tauri::command]
 async fn connect(app: AppHandle, server: ServerConnection) -> Result<String, String> {
-    let session = connect_ssh(&app, &server.host, server.port, &server.user, &server.auth).await?;
+    let session =
+        connect_ssh(&app, &server.host, server.port, &server.user, &server.auth, Some(&server.id))
+            .await?;
     let state = app.state::<AppState>();
 
     {
@@ -836,71 +1218,12 @@ async fn connect(app: AppHandle, server: ServerConnection) -> Result<String, Str
     let config = PtyConfig::default();
     let shell = open_pty_shell(&app, session, &config, &server.id).await?;
 
-    let app_clone = app.clone();
-    let channel = shell.channel.clone();
     let shell_id = shell.id.clone();
 
-    #[cfg(debug_assertions)]
-    debug!(shell_id, "Starting read loop");
-
-    let (tx, mut rx) = mpsc::channel::<Result<String, String>>(100);
-
-    let shell_id_for_read = shell_id.clone();
-    tokio::spawn(async move {
-        let mut channel_guard = channel.lock().await;
-        loop {
-            let msg = channel_guard.wait().await;
-            let Some(msg) = msg else {
-                #[cfg(debug_assertions)]
-                debug!(shell_id_for_read, "Read loop stopped");
-                let _ = tx.send(Err("Channel closed".to_string())).await;
-                break;
-            };
-            match msg {
-                russh::ChannelMsg::Data { ref data } => {
-                    if let Ok(s) = std::str::from_utf8(data) {
-                        let _ = tx.send(Ok(s.to_string())).await;
-                    }
-                }
-                russh::ChannelMsg::ExitStatus { exit_status } => {
-                    let output =
-                        format!("\r\n\r\nConnection closed (exit code: {})\r\n", exit_status);
-                    #[cfg(debug_assertions)]
-                    debug!(
-                        shell_id_for_read,
-                        exit_status, "Connection closed with exit status"
-                    );
-                    let _ = tx.send(Ok(output)).await;
-                    break;
-                }
-                _ => {}
-            }
-        }
-    });
-
-    let app_clone_for_receiver = app_clone.clone();
-    tokio::spawn(async move {
-        while let Some(result) = rx.recv().await {
-            match result {
-                Ok(output) => {
-                    let payload = TerminalOutput {
-                        shell_id: shell_id.clone(),
-                        output,
-                    };
-                    let _ = app_clone_for_receiver.emit("terminal-output", payload);
-                }
-                Err(e) => {
-                    #[cfg(debug_assertions)]
-                    debug!(shell_id, "Error in read loop: {}", e);
-                    break;
-                }
-            }
-        }
-    });
-
-    let shell_id = shell.id.clone();
-    let mut shells = state.shells.lock().await;
-    shells.insert(shell_id.clone(), shell);
+    {
+        let mut shells = state.shells.lock().await;
+        shells.insert(shell_id.clone(), shell);
+    }
 
     Ok(shell_id)
 }
@@ -924,17 +1247,17 @@ async fn disconnect(app: AppHandle, server_id: String) -> Result<(), String> {
     };
 
     for shell_id in shell_ids {
-        let shell = {
+        let cmd_tx = {
             let mut shells = state.shells.lock().await;
-            shells.remove(&shell_id)
+            shells.remove(&shell_id).map(|shell| shell.cmd_tx)
         };
-        if let Some(shell) = shell {
-            let channel = shell.channel.lock().await;
-            let _ = channel.close().await;
+
+        if let Some(tx) = cmd_tx {
+            let _ = tx.send(ShellCommand::Close).await;
         }
     }
 
-    disconnect_ssh(&app, session).await
+    disconnect_ssh(&app, session, Some(&server_id)).await
 }
 
 #[tauri::command]
@@ -946,14 +1269,16 @@ async fn send_input(app: AppHandle, shell_id: String, input: String) -> Result<(
     debug!(shell_id, input_len, "Sending input");
 
     let state = app.state::<AppState>();
-    let shells = state.shells.lock().await;
-    let shell = shells
-        .get(&shell_id)
-        .ok_or_else(|| format!("Shell with id {} not found", shell_id))?;
+    let cmd_tx = {
+        let shells = state.shells.lock().await;
+        shells
+            .get(&shell_id)
+            .map(|shell| shell.cmd_tx.clone())
+            .ok_or_else(|| format!("Shell with id {} not found", shell_id))?
+    };
 
-    let channel = shell.channel.lock().await;
-    channel
-        .data(input.as_bytes())
+    cmd_tx
+        .send(ShellCommand::SendInput(input))
         .await
         .map_err(|e| format!("Failed to send input: {}", e))
 }
@@ -961,14 +1286,16 @@ async fn send_input(app: AppHandle, shell_id: String, input: String) -> Result<(
 #[tauri::command]
 async fn resize(app: AppHandle, shell_id: String, width: u32, height: u32) -> Result<(), String> {
     let state = app.state::<AppState>();
-    let shells = state.shells.lock().await;
-    let shell = shells
-        .get(&shell_id)
-        .ok_or_else(|| format!("Shell with id {} not found", shell_id))?;
+    let cmd_tx = {
+        let shells = state.shells.lock().await;
+        shells
+            .get(&shell_id)
+            .map(|shell| shell.cmd_tx.clone())
+            .ok_or_else(|| format!("Shell with id {} not found", shell_id))?
+    };
 
-    let channel = shell.channel.lock().await;
-    channel
-        .request_pty(false, "xterm-256color", width, height, 0, 0, &[])
+    cmd_tx
+        .send(ShellCommand::Resize(width, height))
         .await
         .map_err(|e| format!("Failed to resize shell: {}", e))
 }
@@ -980,6 +1307,7 @@ pub fn run() {
         .manage(AppState {
             sessions: Mutex::new(HashMap::new()),
             shells: Mutex::new(HashMap::new()),
+            pending_host_keys: Mutex::new(HashMap::new()),
         })
         .invoke_handler(tauri::generate_handler![
             greet,
@@ -991,6 +1319,8 @@ pub fn run() {
             add_snippet,
             update_snippet,
             delete_snippet,
+            trust_host_key,
+            reject_host_key,
             connect,
             disconnect,
             send_input,

@@ -9,6 +9,9 @@ let fitAddon;
 let serverId;
 let shellId;
 let autoScrollEnabled = true;
+let connectionLog = [];
+let pendingHostKey = null;
+let localEchoEnabled = false;
 
 function initTheme() {
   const savedTheme = localStorage.getItem('theme');
@@ -19,6 +22,19 @@ function initTheme() {
   } else {
     document.documentElement.classList.remove('dark');
   }
+}
+
+
+function openHostKeyModal(prompt) {
+  pendingHostKey = prompt;
+  document.getElementById("host-key-host").textContent = `${prompt.host}:${prompt.port}`;
+  document.getElementById("host-key-type").textContent = prompt.key_type;
+  document.getElementById("host-key-fingerprint").textContent = prompt.fingerprint;
+  document.getElementById("host-key-modal").classList.remove("hidden");
+}
+
+function closeHostKeyModal() {
+  document.getElementById("host-key-modal").classList.add("hidden");
 }
 
 function toggleTheme() {
@@ -50,7 +66,7 @@ function initTerminal() {
   term.writeln("Connect to a server to begin...\r\n");
 
   term.onData((data) => {
-    if (shellId) {
+    if (shellId && currentConnectionState.type === "Connected") {
       invoke("send_input", { shellId, input: data }).catch(console.error);
     }
   });
@@ -108,13 +124,16 @@ function initTerminal() {
   });
 }
 
-function updateConnectionState(state) {
+function updateConnectionState(state, shellFromEvent) {
   const normalizedState = normalizeConnectionState(state);
   currentConnectionState = normalizedState;
   const statusEl = document.getElementById("connection-status");
   const disconnectBtn = document.getElementById("disconnect-btn");
   const statusBarHost = document.getElementById("status-bar-host");
   const statusBarState = document.getElementById("status-bar-state");
+  const connectedLabel = currentServer
+    ? `${currentServer.user}@${currentServer.host}:${currentServer.port}`
+    : "";
   
   switch (normalizedState.type) {
     case "Connecting":
@@ -124,24 +143,26 @@ function updateConnectionState(state) {
       statusEl.className = "text-sm text-yellow-600 dark:text-yellow-400";
       disconnectBtn.classList.add("hidden");
       if (currentServer) {
-        statusBarHost.textContent = `${currentServer.user}@${currentServer.host}:${currentServer.port}`;
+        statusBarHost.textContent = connectedLabel;
       }
       statusBarState.textContent = "Connecting";
       statusBarState.className = "font-medium text-yellow-600 dark:text-yellow-400";
       fitAddon.fit();
+      logConnectionEvent("Connecting", connectedLabel, "info");
       break;
     case "Connected":
       term.reset();
-      term.writeln("\x1b[1;32mConnected successfully!\x1b[0m");
+      term.writeln(`\x1b[1;32mConnected successfully to ${connectedLabel}!\x1b[0m`);
       statusEl.textContent = "Connected";
       statusEl.className = "text-sm text-green-600 dark:text-green-400";
       disconnectBtn.classList.remove("hidden");
       if (currentServer) {
-        statusBarHost.textContent = `${currentServer.user}@${currentServer.host}:${currentServer.port}`;
+        statusBarHost.textContent = connectedLabel;
       }
       statusBarState.textContent = "Connected";
       statusBarState.className = "font-medium text-green-600 dark:text-green-400";
       fitAddon.fit();
+      logConnectionEvent("Connected", connectedLabel, "success");
       break;
     case "Disconnected":
       term.reset();
@@ -153,11 +174,15 @@ function updateConnectionState(state) {
       statusBarState.textContent = "Disconnected";
       statusBarState.className = "font-medium text-gray-600 dark:text-gray-400";
       fitAddon.fit();
-      if (shellId) {
+      const shouldAlert = shellId && (!shellFromEvent || shellFromEvent === shellId);
+      if (shouldAlert) {
         showAlert('Connection Lost', 'The SSH connection was unexpectedly disconnected.', 'warning');
       }
-      shellId = null;
-      currentServer = null;
+      if (!shellFromEvent || shellFromEvent === shellId) {
+        shellId = null;
+        currentServer = null;
+      }
+      logConnectionEvent("Disconnected", connectedLabel, "info");
       break;
     case "Error":
       term.reset();
@@ -172,6 +197,7 @@ function updateConnectionState(state) {
       statusBarState.className = "font-medium text-red-600 dark:text-red-400";
       fitAddon.fit();
       showAlert(getErrorType(normalizedState.error), normalizedState.error);
+      logConnectionEvent(`Error: ${normalizedState.error}`, connectedLabel, "error");
       break;
   }
 }
@@ -188,7 +214,24 @@ function normalizeConnectionState(state) {
   if (state.Error) {
     return { type: "Error", error: state.Error };
   }
+  if (state.state && state.state.type) {
+    return state.state;
+  }
   return { type: "Disconnected" };
+}
+
+function normalizeConnectionEvent(payload) {
+  if (!payload || typeof payload === "string") {
+    return { state: normalizeConnectionState(payload), serverId: null, shellId: null };
+  }
+  if (payload.state) {
+    return {
+      state: normalizeConnectionState(payload.state),
+      serverId: payload.server_id ?? payload.serverId ?? null,
+      shellId: payload.shell_id ?? payload.shellId ?? null,
+    };
+  }
+  return { state: normalizeConnectionState(payload), serverId: null, shellId: null };
 }
 
 function showAlert(title, message, type = 'error') {
@@ -288,6 +331,7 @@ async function connectToServer(id) {
   try {
     shellId = await invoke("connect", { server });
     syncPtySize();
+    logConnectionEvent("Shell opened", `${server.user}@${server.host}:${server.port}`, "success");
   } catch (error) {
     console.error("Failed to connect:", error);
     term.reset();
@@ -303,9 +347,31 @@ async function disconnectFromServer() {
     await invoke("disconnect", { serverId: currentServer.id });
     shellId = null;
     currentServer = null;
+    logConnectionEvent("Disconnect requested", "", "info");
   } catch (error) {
     console.error("Failed to disconnect:", error);
     alert("Failed to disconnect: " + error);
+  }
+}
+
+function logConnectionEvent(message, detail = "", type = "info") {
+  const timestamp = new Date().toLocaleTimeString();
+  const entry = { timestamp, message, detail, type };
+  connectionLog.push(entry);
+  if (connectionLog.length > 50) {
+    connectionLog.shift();
+  }
+  const listEl = document.getElementById("connection-log-list");
+  if (listEl) {
+    listEl.innerHTML = connectionLog
+      .slice()
+      .reverse()
+      .map((item) => {
+        const color = item.type === "error" ? "text-red-500" : item.type === "warning" ? "text-yellow-500" : "text-green-500";
+        const detailText = item.detail ? ` — ${item.detail}` : "";
+        return `<li class=\"flex justify-between text-xs py-0.5 border-b border-gray-100 dark:border-gray-700\"><span class=\"text-gray-500 dark:text-gray-400\">${item.timestamp}</span><span class=\"ml-2 ${color}\">${item.message}${detailText}</span></li>`;
+      })
+      .join("");
   }
 }
 
@@ -433,12 +499,18 @@ function renderSnippetList() {
   });
 }
 
-function executeSnippet(snippet) {
-  if (term && serverId) {
-    term.writeln(`\r\n\x1b[1;33mRunning snippet: ${snippet.name}\x1b[0m\r\n`);
-    term.write(snippet.command + "\r\n");
-  } else {
-    alert("Please connect to a server first");
+async function executeSnippet(snippet) {
+  if (!term || !shellId) {
+    alert("Please connect to a server before running a snippet.");
+    return;
+  }
+
+  term.writeln(`\r\n\x1b[1;33mRunning snippet: ${snippet.name}\x1b[0m\r\n`);
+  try {
+    await invoke("send_input", { shellId, input: snippet.command + "\n" });
+  } catch (error) {
+    console.error("Failed to run snippet:", error);
+    showAlert("Snippet Error", `${snippet.name} failed: ${error}`);
   }
 }
 
@@ -576,16 +648,77 @@ window.addEventListener("DOMContentLoaded", () => {
   loadSnippets();
 
   listen("connection-state", (event) => {
-    updateConnectionState(event.payload);
+    const { state, shellId: eventShellId } = normalizeConnectionEvent(event.payload);
+    if (eventShellId && (!shellId || shellId === eventShellId)) {
+      shellId = eventShellId;
+    }
+    updateConnectionState(state, eventShellId);
+  });
+
+  listen("host-key-prompt", (event) => {
+    openHostKeyModal(event.payload);
+    logConnectionEvent("Host key prompt", `${event.payload.host}:${event.payload.port}`, "warning");
+  });
+
+  listen("host-key-mismatch", (event) => {
+    const payload = event.payload;
+    const message = `Host key mismatch for ${payload.host}:${payload.port}`;
+    showAlert("Host Key Mismatch", `${message}. Stored fingerprint: ${payload.stored_fingerprint}`);
+    logConnectionEvent("Host key mismatch", `${payload.host}:${payload.port}`, "error");
   });
 
   listen("terminal-output", (event) => {
-    if (term) {
-      const output = typeof event.payload === 'string' ? event.payload : event.payload.output;
-      term.write(output);
-      if (autoScrollEnabled) {
-        term.scrollToBottom();
-      }
+    if (!term) return;
+    const payload = typeof event.payload === 'string'
+      ? { shell_id: shellId, output: event.payload }
+      : event.payload;
+
+    if (payload.shell_id && shellId && payload.shell_id !== shellId) {
+      return;
+    }
+
+    const output = payload.output || "";
+    term.write(output);
+    if (autoScrollEnabled) {
+      term.scrollToBottom();
+    }
+  });
+
+  document.getElementById("host-key-trust").addEventListener("click", async () => {
+    if (!pendingHostKey) return;
+    try {
+      await invoke("trust_host_key", {
+        host: pendingHostKey.host,
+        port: pendingHostKey.port,
+        keyType: pendingHostKey.key_type,
+        fingerprint: pendingHostKey.fingerprint,
+        publicKeyBase64: pendingHostKey.public_key_base64,
+      });
+      logConnectionEvent("Host key trusted", `${pendingHostKey.host}:${pendingHostKey.port}`, "success");
+    } catch (error) {
+      console.error("Failed to trust host key:", error);
+      showAlert("Trust Failed", error);
+    } finally {
+      pendingHostKey = null;
+      closeHostKeyModal();
+    }
+  });
+
+  document.getElementById("host-key-reject").addEventListener("click", async () => {
+    if (!pendingHostKey) return;
+    try {
+      await invoke("reject_host_key", {
+        host: pendingHostKey.host,
+        port: pendingHostKey.port,
+      });
+      logConnectionEvent("Host key rejected", `${pendingHostKey.host}:${pendingHostKey.port}`, "warning");
+      showAlert("Host Key Rejected", "Connection aborted by user.", "warning");
+    } catch (error) {
+      console.error("Failed to reject host key:", error);
+      showAlert("Reject Failed", error);
+    } finally {
+      pendingHostKey = null;
+      closeHostKeyModal();
     }
   });
 });

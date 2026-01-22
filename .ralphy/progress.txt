@@ -1,0 +1,5 @@
+# Ralphy Progress Log
+
+- [✓] 2026-01-22 14:56 - Add structured logging around connect/auth, channel open, read loop start/stop, send_input calls (dev-only).
+- [✓] 2026-01-22 15:04 - Refactor channel read loop to avoid lock re-entrancy:
+- [✓] 2026-01-22 15:07 - Ensure `terminal-output` events include `shell_id` in payload (future-proofing multi-session).
