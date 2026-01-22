@@ -57,7 +57,7 @@ Track progress by checking boxes as tasks are completed.
 
 ### Phase 2: Server Connection Management
 
-- [ ] Define Rust structs: ServerConnection { host, port, user, auth (password/key) }
+- [x] Define Rust structs: ServerConnection { host, port, user, auth (password/key) }
 - [ ] Create UI form for adding/editing servers
 - [ ] Store connections in a JSON/TOML file (load on startup, save on change)
 - [ ] Expose Rust commands to frontend via Tauri's invoke system for CRUD on connections
