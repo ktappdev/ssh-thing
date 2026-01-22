@@ -6,6 +6,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
+use tokio::sync::Mutex;
+use std::collections::HashMap;
 
 const SERVERS_FILE: &str = "servers.json";
 
@@ -45,6 +47,7 @@ pub type SshSession = Handle<SshClientHandler>;
 pub struct PtyShell {
     pub channel: Channel<Msg>,
     pub id: String,
+    pub server_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +65,11 @@ impl Default for PtyConfig {
             height: 24,
         }
     }
+}
+
+struct AppState {
+    sessions: Mutex<HashMap<String, SshSession>>,
+    shells: Mutex<HashMap<String, PtyShell>>,
 }
 
 pub async fn connect_ssh(
@@ -137,6 +145,7 @@ pub async fn open_pty_shell(
     app: &AppHandle,
     session: &mut SshSession,
     config: &PtyConfig,
+    server_id: &str,
 ) -> Result<PtyShell, String> {
     app.emit("connection-state", ConnectionState::Connected)
         .map_err(|e| format!("Failed to emit event: {}", e))?;
@@ -167,6 +176,7 @@ pub async fn open_pty_shell(
     let shell = PtyShell {
         channel,
         id: uuid::Uuid::new_v4().to_string(),
+        server_id: server_id.to_string(),
     };
     
     Ok(shell)
@@ -249,43 +259,67 @@ async fn delete_server(app: AppHandle, id: String) -> Result<Vec<ServerConnectio
 }
 
 #[tauri::command]
-async fn connect_to_server(app: AppHandle, server: ServerConnection) -> Result<String, String> {
-    let _session = connect_ssh(&app, &server.host, server.port, &server.user, &server.auth).await?;
-    Ok(format!("Connected to {}", server.host))
+async fn connect(app: AppHandle, server: ServerConnection) -> Result<String, String> {
+    let session = connect_ssh(&app, &server.host, server.port, &server.user, &server.auth).await?;
+    let state = app.state::<AppState>();
+    let mut sessions = state.sessions.lock().await;
+    sessions.insert(server.id.clone(), session);
+    Ok(server.id)
 }
 
 #[tauri::command]
-async fn disconnect_from_server(app: AppHandle) -> Result<(), String> {
+async fn disconnect(app: AppHandle, server_id: String) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let mut sessions = state.sessions.lock().await;
+    let mut shells = state.shells.lock().await;
+    
+    shells.retain(|_, shell| shell.server_id != server_id);
+    sessions.remove(&server_id);
+    
     disconnect_ssh(&app).await
 }
 
 #[tauri::command]
-async fn open_shell(
-    app: AppHandle,
-    server: ServerConnection,
-    config: Option<PtyConfig>,
-) -> Result<String, String> {
-    let pty_config = config.unwrap_or_default();
-    let mut session = connect_ssh(&app, &server.host, server.port, &server.user, &server.auth).await?;
+async fn send_input(app: AppHandle, shell_id: String, input: String) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let shells = state.shells.lock().await;
+    let shell = shells.get(&shell_id)
+        .ok_or_else(|| format!("Shell with id {} not found", shell_id))?;
     
-    let _channel = open_pty_shell(&app, &mut session, &pty_config).await?;
+    shell.channel.data(input.as_bytes()).await
+        .map_err(|e| format!("Failed to send input: {}", e))
+}
+
+#[tauri::command]
+async fn resize(app: AppHandle, shell_id: String, width: u32, height: u32) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let shells = state.shells.lock().await;
+    let shell = shells.get(&shell_id)
+        .ok_or_else(|| format!("Shell with id {} not found", shell_id))?;
     
-    Ok(format!("PTY shell opened on {}", server.host))
+    shell.channel.request_pty(false, "xterm-256color", width, height, 0, 0, &[])
+        .await
+        .map_err(|e| format!("Failed to resize shell: {}", e))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .manage(AppState {
+            sessions: Mutex::new(HashMap::new()),
+            shells: Mutex::new(HashMap::new()),
+        })
         .invoke_handler(tauri::generate_handler![
             greet,
             get_servers,
             add_server,
             update_server,
             delete_server,
-            connect_to_server,
-            disconnect_from_server,
-            open_shell
+            connect,
+            disconnect,
+            send_input,
+            resize
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
