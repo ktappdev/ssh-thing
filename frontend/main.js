@@ -262,6 +262,7 @@ function renderSnippetList() {
       <div class="flex justify-between items-center">
         <span class="font-medium truncate flex-1">${snippet.name}</span>
         <div class="flex gap-1">
+          <button class="snippet-run-btn text-green-500 hover:text-green-700 text-sm" data-id="${snippet.id}">Run</button>
           <button class="snippet-edit-btn text-blue-500 hover:text-blue-700 text-sm" data-id="${snippet.id}">Edit</button>
           <button class="snippet-delete-btn text-red-500 hover:text-red-700 text-sm" data-id="${snippet.id}">Delete</button>
         </div>
@@ -271,9 +272,17 @@ function renderSnippetList() {
     listEl.appendChild(li);
 
     li.addEventListener("click", (e) => {
-      if (!e.target.classList.contains("snippet-edit-btn") && !e.target.classList.contains("snippet-delete-btn")) {
+      if (!e.target.classList.contains("snippet-run-btn") && !e.target.classList.contains("snippet-edit-btn") && !e.target.classList.contains("snippet-delete-btn")) {
         executeSnippet(snippet);
       }
+    });
+  });
+
+  document.querySelectorAll(".snippet-run-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const snippet = snippets.find((s) => s.id === btn.dataset.id);
+      if (snippet) executeSnippet(snippet);
     });
   });
 
