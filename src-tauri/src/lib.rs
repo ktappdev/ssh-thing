@@ -45,7 +45,7 @@ pub type SshSession = Handle<SshClientHandler>;
 
 #[derive(Debug)]
 pub struct PtyShell {
-    pub channel: Channel<Msg>,
+    pub channel: Arc<Mutex<Channel<Msg>>>,
     pub id: String,
     pub server_id: String,
 }
@@ -174,7 +174,7 @@ pub async fn open_pty_shell(
         .map_err(|e| format!("Failed to request shell: {}", e))?;
     
     let shell = PtyShell {
-        channel,
+        channel: Arc::new(Mutex::new(channel)),
         id: uuid::Uuid::new_v4().to_string(),
         server_id: server_id.to_string(),
     };
@@ -262,8 +262,52 @@ async fn delete_server(app: AppHandle, id: String) -> Result<Vec<ServerConnectio
 async fn connect(app: AppHandle, server: ServerConnection) -> Result<String, String> {
     let session = connect_ssh(&app, &server.host, server.port, &server.user, &server.auth).await?;
     let state = app.state::<AppState>();
+
+    {
+        let mut sessions = state.sessions.lock().await;
+        sessions.insert(server.id.clone(), session);
+    }
+
     let mut sessions = state.sessions.lock().await;
-    sessions.insert(server.id.clone(), session);
+    let session = sessions.get_mut(&server.id)
+        .ok_or_else(|| format!("Session not found"))?;
+
+    let config = PtyConfig::default();
+    let shell = open_pty_shell(&app, session, &config, &server.id).await?;
+
+    let app_clone = app.clone();
+    let channel = shell.channel.clone();
+
+    tokio::spawn(async move {
+        let mut channel_guard = channel.lock().await;
+        loop {
+            let msg = channel_guard.wait().await;
+            let Some(msg) = msg else {
+                break;
+            };
+            match msg {
+                russh::ChannelMsg::Data { ref data } => {
+                    drop(channel_guard);
+                    if let Ok(s) = std::str::from_utf8(data) {
+                        let _ = app_clone.emit("terminal-output", s);
+                    }
+                    channel_guard = channel.lock().await;
+                }
+                russh::ChannelMsg::ExitStatus { exit_status } => {
+                    drop(channel_guard);
+                    let _ = app_clone.emit("terminal-output", format!("\r\n\r\nConnection closed (exit code: {})\r\n", exit_status));
+                    break;
+                }
+                _ => {
+                    channel_guard = channel.lock().await;
+                }
+            }
+        }
+    });
+
+    let mut shells = state.shells.lock().await;
+    shells.insert(shell.id.clone(), shell);
+
     Ok(server.id)
 }
 
@@ -285,8 +329,9 @@ async fn send_input(app: AppHandle, shell_id: String, input: String) -> Result<(
     let shells = state.shells.lock().await;
     let shell = shells.get(&shell_id)
         .ok_or_else(|| format!("Shell with id {} not found", shell_id))?;
-    
-    shell.channel.data(input.as_bytes()).await
+
+    let channel = shell.channel.lock().await;
+    channel.data(input.as_bytes()).await
         .map_err(|e| format!("Failed to send input: {}", e))
 }
 
@@ -296,8 +341,9 @@ async fn resize(app: AppHandle, shell_id: String, width: u32, height: u32) -> Re
     let shells = state.shells.lock().await;
     let shell = shells.get(&shell_id)
         .ok_or_else(|| format!("Shell with id {} not found", shell_id))?;
-    
-    shell.channel.request_pty(false, "xterm-256color", width, height, 0, 0, &[])
+
+    let channel = shell.channel.lock().await;
+    channel.request_pty(false, "xterm-256color", width, height, 0, 0, &[])
         .await
         .map_err(|e| format!("Failed to resize shell: {}", e))
 }

@@ -4447,6 +4447,7 @@ dependencies = [
 name = "tauri-app"
 version = "0.0.0"
 dependencies = [
+ "futures",
  "russh",
  "serde",
  "serde_json",
@@ -4454,6 +4455,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

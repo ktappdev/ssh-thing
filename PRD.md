@@ -67,9 +67,9 @@ Track progress by checking boxes as tasks are completed.
 
 - [x] Implement async SSH connect function using russh (support password & key auth)
 - [x] Handle connection states: connecting, connected, disconnected, error
-- [ ] Create channel for shell (PTY) using russh
-- [ ] Expose Rust commands: connect, disconnect, send_input, resize
-- [ ] Integrate xterm.js in frontend for terminal rendering
+- [x] Create channel for shell (PTY) using russh
+- [x] Expose Rust commands: connect, disconnect, send_input, resize
+- [x] Integrate xterm.js in frontend for terminal rendering
 - [ ] Wire up: on connect, open terminal, forward input/output via Tauri events
 - [ ] Implement disconnect and cleanup
 

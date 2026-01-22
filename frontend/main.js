@@ -5,6 +5,7 @@ let servers = [];
 let currentConnectionState = { type: "Disconnected" };
 let term;
 let fitAddon;
+let shellId;
 
 function initTerminal() {
   term = new Terminal({
@@ -16,18 +17,24 @@ function initTerminal() {
       foreground: '#00ff00',
     },
   });
-  
+
   fitAddon = new FitAddon.FitAddon();
-  
+
   const terminalEl = document.getElementById("terminal-container");
   terminalEl.innerHTML = "";
   term.loadAddon(fitAddon);
   term.open(terminalEl);
   fitAddon.fit();
-  
+
   term.writeln("\x1b[1;32mSSH Terminal\x1b[0m");
   term.writeln("Connect to a server to begin...\r\n");
-  
+
+  term.onData((data) => {
+    if (shellId) {
+      invoke("send_input", { shellId, input: data }).catch(console.error);
+    }
+  });
+
   window.addEventListener('resize', () => {
     fitAddon.fit();
   });
@@ -119,17 +126,24 @@ async function connectToServer(id) {
   const server = servers.find((s) => s.id === id);
   if (!server) return;
 
+  term.reset();
+  term.writeln("\x1b[1;33mConnecting...\x1b[0m");
+
   try {
-    await invoke("connect_to_server", { server });
+    shellId = await invoke("connect", { server });
   } catch (error) {
     console.error("Failed to connect:", error);
-    alert("Failed to connect: " + error);
+    term.reset();
+    term.writeln(`\x1b[1;31mConnection failed: ${error}\x1b[0m`);
   }
 }
 
 async function disconnectFromServer() {
+  if (!shellId) return;
+
   try {
-    await invoke("disconnect_from_server");
+    await invoke("disconnect", { serverId: shellId });
+    shellId = null;
   } catch (error) {
     console.error("Failed to disconnect:", error);
     alert("Failed to disconnect: " + error);
@@ -244,8 +258,14 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("server-form").addEventListener("submit", saveServer);
   document.getElementById("disconnect-btn").addEventListener("click", disconnectFromServer);
   loadServers();
-  
+
   listen("connection-state", (event) => {
     updateConnectionState(event.payload);
+  });
+
+  listen("terminal-output", (event) => {
+    if (term) {
+      term.write(event.payload);
+    }
   });
 });
