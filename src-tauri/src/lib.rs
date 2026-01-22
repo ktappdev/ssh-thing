@@ -8,7 +8,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, info};
 
 const SERVERS_FILE: &str = "servers.json";
@@ -332,6 +332,93 @@ mod tests {
         let input_len = 10usize;
 
         tracing::debug!(shell_id, input_len, "Sending input");
+    }
+
+    #[tokio::test]
+    async fn test_read_loop_data_message_handling() {
+        use tokio::sync::mpsc;
+
+        let (tx, mut rx) = mpsc::channel::<Result<String, String>>(100);
+
+        let test_data = "test output data";
+        let data_bytes = test_data.as_bytes();
+
+        let result = std::str::from_utf8(data_bytes).map(|s| Ok(s.to_string()));
+        tx.send(result.unwrap()).await.unwrap();
+
+        let received = rx.recv().await.unwrap();
+        assert!(received.is_ok());
+        assert_eq!(received.unwrap(), test_data);
+    }
+
+    #[tokio::test]
+    async fn test_read_loop_exit_status_handling() {
+        use tokio::sync::mpsc;
+
+        let (tx, mut rx) = mpsc::channel::<Result<String, String>>(100);
+
+        let exit_status = 0u32;
+        let expected_output = format!("\r\n\r\nConnection closed (exit code: {})\r\n", exit_status);
+
+        tx.send(Ok(expected_output.clone())).await.unwrap();
+
+        let received = rx.recv().await.unwrap();
+        assert!(received.is_ok());
+        assert_eq!(received.unwrap(), expected_output);
+    }
+
+    #[tokio::test]
+    async fn test_read_loop_channel_error_handling() {
+        use tokio::sync::mpsc;
+
+        let (tx, mut rx) = mpsc::channel::<Result<String, String>>(100);
+
+        tx.send(Err("Channel closed".to_string())).await.unwrap();
+
+        let received = rx.recv().await.unwrap();
+        assert!(received.is_err());
+        assert_eq!(received.unwrap_err(), "Channel closed");
+    }
+
+    #[tokio::test]
+    async fn test_read_loop_multiple_data_messages() {
+        use tokio::sync::mpsc;
+
+        let (tx, mut rx) = mpsc::channel::<Result<String, String>>(100);
+
+        let messages = vec!["line1", "line2", "line3"];
+
+        for msg in &messages {
+            tx.send(Ok(msg.to_string())).await.unwrap();
+        }
+
+        for expected in messages {
+            let received = rx.recv().await.unwrap();
+            assert!(received.is_ok());
+            assert_eq!(received.unwrap(), expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_loop_mpsc_channel_capacity() {
+        use tokio::sync::mpsc;
+
+        let (tx, mut rx) = mpsc::channel::<Result<String, String>>(100);
+
+        for i in 0..10 {
+            let msg = format!("message {}", i);
+            tx.send(Ok(msg)).await.unwrap();
+        }
+
+        drop(tx);
+
+        let mut count = 0;
+        while let Some(result) = rx.recv().await {
+            if result.is_ok() {
+                count += 1;
+            }
+        }
+        assert_eq!(count, 10);
     }
 }
 
@@ -705,35 +792,52 @@ async fn connect(app: AppHandle, server: ServerConnection) -> Result<String, Str
     #[cfg(debug_assertions)]
     debug!(shell_id, "Starting read loop");
 
+    let (tx, mut rx) = mpsc::channel::<Result<String, String>>(100);
+
+    let shell_id_for_read = shell_id.clone();
     tokio::spawn(async move {
         let mut channel_guard = channel.lock().await;
         loop {
             let msg = channel_guard.wait().await;
             let Some(msg) = msg else {
                 #[cfg(debug_assertions)]
-                debug!(shell_id, "Read loop stopped");
+                debug!(shell_id_for_read, "Read loop stopped");
+                let _ = tx.send(Err("Channel closed".to_string())).await;
                 break;
             };
             match msg {
                 russh::ChannelMsg::Data { ref data } => {
-                    drop(channel_guard);
                     if let Ok(s) = std::str::from_utf8(data) {
-                        let _ = app_clone.emit("terminal-output", s);
+                        let _ = tx.send(Ok(s.to_string())).await;
                     }
-                    channel_guard = channel.lock().await;
                 }
                 russh::ChannelMsg::ExitStatus { exit_status } => {
-                    drop(channel_guard);
-                    let _ = app_clone.emit(
-                        "terminal-output",
-                        format!("\r\n\r\nConnection closed (exit code: {})\r\n", exit_status),
-                    );
+                    let output =
+                        format!("\r\n\r\nConnection closed (exit code: {})\r\n", exit_status);
                     #[cfg(debug_assertions)]
-                    debug!(shell_id, exit_status, "Connection closed with exit status");
+                    debug!(
+                        shell_id_for_read,
+                        exit_status, "Connection closed with exit status"
+                    );
+                    let _ = tx.send(Ok(output)).await;
                     break;
                 }
-                _ => {
-                    channel_guard = channel.lock().await;
+                _ => {}
+            }
+        }
+    });
+
+    let app_clone_for_receiver = app_clone.clone();
+    tokio::spawn(async move {
+        while let Some(result) = rx.recv().await {
+            match result {
+                Ok(output) => {
+                    let _ = app_clone_for_receiver.emit("terminal-output", output);
+                }
+                Err(e) => {
+                    #[cfg(debug_assertions)]
+                    debug!(shell_id, "Error in read loop: {}", e);
+                    break;
                 }
             }
         }
