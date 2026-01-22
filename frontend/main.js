@@ -9,6 +9,22 @@ let fitAddon;
 let serverId;
 let autoScrollEnabled = true;
 
+function initTheme() {
+  const savedTheme = localStorage.getItem('theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const isDark = savedTheme ? savedTheme === 'dark' : prefersDark;
+  if (isDark) {
+    document.documentElement.classList.add('dark');
+  } else {
+    document.documentElement.classList.remove('dark');
+  }
+}
+
+function toggleTheme() {
+  const isDark = document.documentElement.classList.toggle('dark');
+  localStorage.setItem('theme', isDark ? 'dark' : 'light');
+}
+
 function initTerminal() {
   term = new Terminal({
     cursorBlink: true,
@@ -478,6 +494,8 @@ document.getElementById("auth-type").addEventListener("change", (e) => {
 });
 
 window.addEventListener("DOMContentLoaded", () => {
+  initTheme();
+  document.getElementById("theme-toggle").addEventListener("click", toggleTheme);
   initTerminal();
   document.getElementById("add-server-btn").addEventListener("click", openModal);
   document.getElementById("cancel-btn").addEventListener("click", closeModal);
