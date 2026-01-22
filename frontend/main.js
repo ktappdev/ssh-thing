@@ -3,6 +3,78 @@ const { listen } = window.__TAURI__.event;
 
 let servers = [];
 let currentConnectionState = { type: "Disconnected" };
+let term;
+let fitAddon;
+
+function initTerminal() {
+  term = new Terminal({
+    cursorBlink: true,
+    fontFamily: 'monospace',
+    fontSize: 14,
+    theme: {
+      background: '#000000',
+      foreground: '#00ff00',
+    },
+  });
+  
+  fitAddon = new FitAddon.FitAddon();
+  
+  const terminalEl = document.getElementById("terminal-container");
+  terminalEl.innerHTML = "";
+  term.loadAddon(fitAddon);
+  term.open(terminalEl);
+  fitAddon.fit();
+  
+  term.writeln("\x1b[1;32mSSH Terminal\x1b[0m");
+  term.writeln("Connect to a server to begin...\r\n");
+  
+  window.addEventListener('resize', () => {
+    fitAddon.fit();
+  });
+}
+
+function updateConnectionState(state) {
+  currentConnectionState = state;
+  const statusEl = document.getElementById("connection-status");
+  const disconnectBtn = document.getElementById("disconnect-btn");
+  
+  if (!term) return;
+  
+  switch (state.type) {
+    case "Connecting":
+      term.reset();
+      term.writeln("\x1b[1;33mConnecting to server...\x1b[0m");
+      statusEl.textContent = "Connecting...";
+      statusEl.className = "text-sm text-yellow-600 dark:text-yellow-400";
+      disconnectBtn.classList.add("hidden");
+      fitAddon.fit();
+      break;
+    case "Connected":
+      term.reset();
+      term.writeln("\x1b[1;32mConnected successfully!\x1b[0m");
+      statusEl.textContent = "Connected";
+      statusEl.className = "text-sm text-green-600 dark:text-green-400";
+      disconnectBtn.classList.remove("hidden");
+      fitAddon.fit();
+      break;
+    case "Disconnected":
+      term.reset();
+      term.writeln("Disconnected from server.");
+      statusEl.textContent = "Disconnected";
+      statusEl.className = "text-sm text-gray-600 dark:text-gray-400";
+      disconnectBtn.classList.add("hidden");
+      fitAddon.fit();
+      break;
+    case "Error":
+      term.reset();
+      term.writeln(`\x1b[1;31mConnection error: ${state.error}\x1b[0m`);
+      statusEl.textContent = "Error: " + state.error;
+      statusEl.className = "text-sm text-red-600 dark:text-red-400";
+      disconnectBtn.classList.add("hidden");
+      fitAddon.fit();
+      break;
+  }
+}
 
 async function loadServers() {
   try {
@@ -41,40 +113,6 @@ function renderServerList() {
   document.querySelectorAll(".delete-btn").forEach((btn) => {
     btn.addEventListener("click", () => deleteServer(btn.dataset.id));
   });
-}
-
-function updateConnectionState(state) {
-  currentConnectionState = state;
-  const terminal = document.getElementById("terminal");
-  const statusEl = document.getElementById("connection-status");
-  const disconnectBtn = document.getElementById("disconnect-btn");
-  
-  switch (state.type) {
-    case "Connecting":
-      terminal.innerHTML = `<p class="text-yellow-400">Connecting to server...</p>`;
-      statusEl.textContent = "Connecting...";
-      statusEl.className = "text-sm text-yellow-600 dark:text-yellow-400";
-      disconnectBtn.classList.add("hidden");
-      break;
-    case "Connected":
-      terminal.innerHTML = `<p class="text-green-400">Connected successfully!</p>`;
-      statusEl.textContent = "Connected";
-      statusEl.className = "text-sm text-green-600 dark:text-green-400";
-      disconnectBtn.classList.remove("hidden");
-      break;
-    case "Disconnected":
-      terminal.innerHTML = `<p>Disconnected from server.</p>`;
-      statusEl.textContent = "Disconnected";
-      statusEl.className = "text-sm text-gray-600 dark:text-gray-400";
-      disconnectBtn.classList.add("hidden");
-      break;
-    case "Error":
-      terminal.innerHTML = `<p class="text-red-400">Connection error: ${state.error}</p>`;
-      statusEl.textContent = "Error: " + state.error;
-      statusEl.className = "text-sm text-red-600 dark:text-red-400";
-      disconnectBtn.classList.add("hidden");
-      break;
-  }
 }
 
 async function connectToServer(id) {
@@ -200,6 +238,7 @@ document.getElementById("auth-type").addEventListener("change", (e) => {
 });
 
 window.addEventListener("DOMContentLoaded", () => {
+  initTerminal();
   document.getElementById("add-server-btn").addEventListener("click", openModal);
   document.getElementById("cancel-btn").addEventListener("click", closeModal);
   document.getElementById("server-form").addEventListener("submit", saveServer);
