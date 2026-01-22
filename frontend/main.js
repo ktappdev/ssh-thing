@@ -7,6 +7,7 @@ let currentServer = null;
 let term;
 let fitAddon;
 let serverId;
+let autoScrollEnabled = true;
 
 function initTerminal() {
   term = new Terminal({
@@ -33,6 +34,15 @@ function initTerminal() {
   term.onData((data) => {
     if (serverId) {
       invoke("send_input", { shellId: serverId, input: data }).catch(console.error);
+    }
+  });
+
+  term.onScroll((newRow) => {
+    const maxScroll = term.rows - 1;
+    if (newRow < maxScroll) {
+      autoScrollEnabled = false;
+    } else {
+      autoScrollEnabled = true;
     }
   });
 
@@ -486,6 +496,9 @@ window.addEventListener("DOMContentLoaded", () => {
   listen("terminal-output", (event) => {
     if (term) {
       term.write(event.payload);
+      if (autoScrollEnabled) {
+        term.scrollToBottom();
+      }
     }
   });
 });
