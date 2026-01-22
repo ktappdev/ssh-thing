@@ -144,7 +144,10 @@ pub async fn connect_ssh(
     Ok(session)
 }
 
-pub async fn disconnect_ssh(app: &AppHandle) -> Result<(), String> {
+pub async fn disconnect_ssh(app: &AppHandle, session: Option<SshSession>) -> Result<(), String> {
+    if let Some(s) = session {
+        let _ = s.disconnect(russh::Disconnect::ByApplication, "disconnected", "en").await;
+    }
     app.emit("connection-state", ConnectionState::Disconnected)
         .map_err(|e| format!("Failed to emit event: {}", e))?;
     Ok(())
@@ -389,23 +392,31 @@ async fn connect(app: AppHandle, server: ServerConnection) -> Result<String, Str
 async fn disconnect(app: AppHandle, server_id: String) -> Result<(), String> {
     let state = app.state::<AppState>();
 
-    let shell_to_close = {
-        let shells = state.shells.lock().await;
-        shells.get(&server_id).cloned()
+    let session = {
+        let mut sessions = state.sessions.lock().await;
+        sessions.remove(&server_id)
     };
 
-    if let Some(shell) = shell_to_close {
-        let channel = shell.channel.lock().await;
-        let _ = channel.close().await;
+    let shell_ids: Vec<String> = {
+        let shells = state.shells.lock().await;
+        shells.iter()
+            .filter(|(_, shell)| shell.server_id == server_id)
+            .map(|(id, _)| id.clone())
+            .collect()
+    };
+
+    for shell_id in shell_ids {
+        let shell = {
+            let mut shells = state.shells.lock().await;
+            shells.remove(&shell_id)
+        };
+        if let Some(shell) = shell {
+            let channel = shell.channel.lock().await;
+            let _ = channel.close().await;
+        }
     }
 
-    let mut sessions = state.sessions.lock().await;
-    let mut shells = state.shells.lock().await;
-
-    shells.retain(|_, shell| shell.server_id != server_id);
-    sessions.remove(&server_id);
-
-    disconnect_ssh(&app).await
+    disconnect_ssh(&app, session).await
 }
 
 #[tauri::command]
