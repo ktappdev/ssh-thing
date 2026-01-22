@@ -87,6 +87,11 @@ function updateConnectionState(state) {
       statusBarState.textContent = "Disconnected";
       statusBarState.className = "font-medium text-gray-600 dark:text-gray-400";
       fitAddon.fit();
+      if (serverId) {
+        showAlert('Connection Lost', 'The SSH connection was unexpectedly disconnected.', 'warning');
+      }
+      serverId = null;
+      currentServer = null;
       break;
     case "Error":
       term.reset();
@@ -100,8 +105,62 @@ function updateConnectionState(state) {
       statusBarState.textContent = "Error";
       statusBarState.className = "font-medium text-red-600 dark:text-red-400";
       fitAddon.fit();
+      showAlert(getErrorType(state.error), state.error);
       break;
   }
+}
+
+function showAlert(title, message, type = 'error') {
+  const alertModal = document.getElementById('alert-modal');
+  const alertTitle = document.getElementById('alert-title');
+  const alertMessage = document.getElementById('alert-message');
+  const alertIcon = document.getElementById('alert-icon');
+  const alertIconSvg = document.getElementById('alert-icon-svg');
+
+  alertTitle.textContent = title;
+  alertMessage.textContent = message;
+
+  alertIcon.className = 'flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ' + type;
+  alertIconSvg.innerHTML = getIconForType(type);
+
+  alertModal.classList.remove('hidden');
+
+  document.getElementById('alert-ok-btn').onclick = () => {
+    alertModal.classList.add('hidden');
+  };
+
+  alertModal.onclick = (e) => {
+    if (e.target === alertModal) {
+      alertModal.classList.add('hidden');
+    }
+  };
+}
+
+function getIconForType(type) {
+  switch (type) {
+    case 'error':
+      return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />';
+    case 'warning':
+      return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />';
+    case 'success':
+      return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />';
+    default:
+      return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />';
+  }
+}
+
+function getErrorType(error) {
+  const errorLower = error.toLowerCase();
+  if (errorLower.includes('authentication') || errorLower.includes('auth') || errorLower.includes('password') || errorLower.includes('key')) {
+    return 'Authentication Error';
+  }
+  if (errorLower.includes('timeout') || errorLower.includes('timed out') || errorLower.includes('connection timed')) {
+    return 'Connection Timeout';
+  }
+  if (errorLower.includes('disconnect') || errorLower.includes('closed') || errorLower.includes('broken pipe') || errorLower.includes('eof')) {
+    return 'Connection Disconnected';
+  }
+  return 'Connection Error';
 }
 
 async function loadServers() {
@@ -157,6 +216,7 @@ async function connectToServer(id) {
     console.error("Failed to connect:", error);
     term.reset();
     term.writeln(`\x1b[1;31mConnection failed: ${error}\x1b[0m`);
+    showAlert(getErrorType(error), error);
   }
 }
 
