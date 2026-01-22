@@ -5,7 +5,7 @@ let servers = [];
 let currentConnectionState = { type: "Disconnected" };
 let term;
 let fitAddon;
-let shellId;
+let serverId;
 
 function initTerminal() {
   term = new Terminal({
@@ -30,8 +30,8 @@ function initTerminal() {
   term.writeln("Connect to a server to begin...\r\n");
 
   term.onData((data) => {
-    if (shellId) {
-      invoke("send_input", { shellId, input: data }).catch(console.error);
+    if (serverId) {
+      invoke("send_input", { shellId: serverId, input: data }).catch(console.error);
     }
   });
 
@@ -130,7 +130,7 @@ async function connectToServer(id) {
   term.writeln("\x1b[1;33mConnecting...\x1b[0m");
 
   try {
-    shellId = await invoke("connect", { server });
+    serverId = await invoke("connect", { server });
   } catch (error) {
     console.error("Failed to connect:", error);
     term.reset();
@@ -139,11 +139,11 @@ async function connectToServer(id) {
 }
 
 async function disconnectFromServer() {
-  if (!shellId) return;
+  if (!serverId) return;
 
   try {
-    await invoke("disconnect", { serverId: shellId });
-    shellId = null;
+    await invoke("disconnect", { serverId });
+    serverId = null;
   } catch (error) {
     console.error("Failed to disconnect:", error);
     alert("Failed to disconnect: " + error);
@@ -293,7 +293,7 @@ function renderSnippetList() {
 }
 
 function executeSnippet(snippet) {
-  if (term && shellId) {
+  if (term && serverId) {
     term.writeln(`\r\n\x1b[1;33mRunning snippet: ${snippet.name}\x1b[0m\r\n`);
     term.write(snippet.command + "\r\n");
   } else {
