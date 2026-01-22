@@ -70,15 +70,15 @@ Track progress by checking boxes as tasks are completed.
 - [x] Create channel for shell (PTY) using russh
 - [x] Expose Rust commands: connect, disconnect, send_input, resize
 - [x] Integrate xterm.js in frontend for terminal rendering
-- [ ] Wire up: on connect, open terminal, forward input/output via Tauri events
-- [ ] Implement disconnect and cleanup
+- [x] Wire up: on connect, open terminal, forward input/output via Tauri events
+- [x] Implement disconnect and cleanup
 
 ### Phase 4: Snippet Management
 
-- [ ] Define Snippet struct: { name, command (String), description? }
-- [ ] UI panel/sidebar for snippets: list, add/edit/delete
-- [ ] Store snippets in JSON/TOML (separate file or same as connections)
-- [ ] Expose Rust commands: CRUD snippets
+- [x] Define Snippet struct: { name, command (String), description? }
+- [x] UI panel/sidebar for snippets: list, add/edit/delete
+- [x] Store snippets in JSON/TOML (separate file or same as connections)
+- [x] Expose Rust commands: CRUD snippets
 - [ ] Add "Run Snippet" button per snippet → send command to current SSH channel
 
 ### Phase 5: Polish & Error Handling
