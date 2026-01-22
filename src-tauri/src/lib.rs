@@ -85,6 +85,12 @@ struct SnippetsToml {
     snippets: Vec<Snippet>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TerminalOutput {
+    pub shell_id: String,
+    pub output: String,
+}
+
 impl Default for PtyConfig {
     fn default() -> Self {
         Self {
@@ -419,6 +425,51 @@ mod tests {
             }
         }
         assert_eq!(count, 10);
+    }
+
+    #[test]
+    fn test_terminal_output_serialization() {
+        let terminal_output = TerminalOutput {
+            shell_id: "test-shell-123".to_string(),
+            output: "test output data".to_string(),
+        };
+
+        let json = serde_json::to_string(&terminal_output).expect("Failed to serialize");
+        let deserialized: TerminalOutput =
+            serde_json::from_str(&json).expect("Failed to deserialize");
+
+        assert_eq!(terminal_output.shell_id, deserialized.shell_id);
+        assert_eq!(terminal_output.output, deserialized.output);
+    }
+
+    #[test]
+    fn test_terminal_output_with_multiline_output() {
+        let terminal_output = TerminalOutput {
+            shell_id: "shell-456".to_string(),
+            output: "line1\r\nline2\r\nline3".to_string(),
+        };
+
+        let json = serde_json::to_string(&terminal_output).expect("Failed to serialize");
+        let deserialized: TerminalOutput =
+            serde_json::from_str(&json).expect("Failed to deserialize");
+
+        assert_eq!(deserialized.shell_id, "shell-456");
+        assert_eq!(deserialized.output, "line1\r\nline2\r\nline3");
+    }
+
+    #[test]
+    fn test_terminal_output_empty_output() {
+        let terminal_output = TerminalOutput {
+            shell_id: "shell-789".to_string(),
+            output: "".to_string(),
+        };
+
+        let json = serde_json::to_string(&terminal_output).expect("Failed to serialize");
+        let deserialized: TerminalOutput =
+            serde_json::from_str(&json).expect("Failed to deserialize");
+
+        assert_eq!(deserialized.shell_id, "shell-789");
+        assert_eq!(deserialized.output, "");
     }
 }
 
@@ -832,7 +883,11 @@ async fn connect(app: AppHandle, server: ServerConnection) -> Result<String, Str
         while let Some(result) = rx.recv().await {
             match result {
                 Ok(output) => {
-                    let _ = app_clone_for_receiver.emit("terminal-output", output);
+                    let payload = TerminalOutput {
+                        shell_id: shell_id.clone(),
+                        output,
+                    };
+                    let _ = app_clone_for_receiver.emit("terminal-output", payload);
                 }
                 Err(e) => {
                     #[cfg(debug_assertions)]

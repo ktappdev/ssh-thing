@@ -7,6 +7,7 @@ let currentServer = null;
 let term;
 let fitAddon;
 let serverId;
+let shellId;
 let autoScrollEnabled = true;
 
 function initTheme() {
@@ -43,13 +44,14 @@ function initTerminal() {
   term.loadAddon(fitAddon);
   term.open(terminalEl);
   fitAddon.fit();
+  syncPtySize();
 
   term.writeln("\x1b[1;32mSSH Terminal\x1b[0m");
   term.writeln("Connect to a server to begin...\r\n");
 
   term.onData((data) => {
-    if (serverId) {
-      invoke("send_input", { shellId: serverId, input: data }).catch(console.error);
+    if (shellId) {
+      invoke("send_input", { shellId, input: data }).catch(console.error);
     }
   });
 
@@ -83,8 +85,8 @@ function initTerminal() {
           input = '\x0b';
           break;
       }
-      if (input && serverId) {
-        invoke("send_input", { shellId: serverId, input }).catch(console.error);
+      if (input && shellId) {
+        invoke("send_input", { shellId, input }).catch(console.error);
         domEvent.preventDefault();
         domEvent.stopPropagation();
       }
@@ -102,17 +104,19 @@ function initTerminal() {
 
   window.addEventListener('resize', () => {
     fitAddon.fit();
+    syncPtySize();
   });
 }
 
 function updateConnectionState(state) {
-  currentConnectionState = state;
+  const normalizedState = normalizeConnectionState(state);
+  currentConnectionState = normalizedState;
   const statusEl = document.getElementById("connection-status");
   const disconnectBtn = document.getElementById("disconnect-btn");
   const statusBarHost = document.getElementById("status-bar-host");
   const statusBarState = document.getElementById("status-bar-state");
   
-  switch (state.type) {
+  switch (normalizedState.type) {
     case "Connecting":
       term.reset();
       term.writeln("\x1b[1;33mConnecting to server...\x1b[0m");
@@ -149,16 +153,16 @@ function updateConnectionState(state) {
       statusBarState.textContent = "Disconnected";
       statusBarState.className = "font-medium text-gray-600 dark:text-gray-400";
       fitAddon.fit();
-      if (serverId) {
+      if (shellId) {
         showAlert('Connection Lost', 'The SSH connection was unexpectedly disconnected.', 'warning');
       }
-      serverId = null;
+      shellId = null;
       currentServer = null;
       break;
     case "Error":
       term.reset();
-      term.writeln(`\x1b[1;31mConnection error: ${state.error}\x1b[0m`);
-      statusEl.textContent = "Error: " + state.error;
+      term.writeln(`\x1b[1;31mConnection error: ${normalizedState.error}\x1b[0m`);
+      statusEl.textContent = "Error: " + normalizedState.error;
       statusEl.className = "text-sm text-red-600 dark:text-red-400";
       disconnectBtn.classList.add("hidden");
       if (currentServer) {
@@ -167,9 +171,24 @@ function updateConnectionState(state) {
       statusBarState.textContent = "Error";
       statusBarState.className = "font-medium text-red-600 dark:text-red-400";
       fitAddon.fit();
-      showAlert(getErrorType(state.error), state.error);
+      showAlert(getErrorType(normalizedState.error), normalizedState.error);
       break;
   }
+}
+function normalizeConnectionState(state) {
+  if (!state) {
+    return { type: "Disconnected" };
+  }
+  if (typeof state === "string") {
+    return { type: state };
+  }
+  if (state.type) {
+    return state;
+  }
+  if (state.Error) {
+    return { type: "Error", error: state.Error };
+  }
+  return { type: "Disconnected" };
 }
 
 function showAlert(title, message, type = 'error') {
@@ -234,6 +253,12 @@ async function loadServers() {
   }
 }
 
+function syncPtySize() {
+  if (!shellId || !term) return;
+  const width = term.cols;
+  const height = term.rows;
+  invoke("resize", { shellId, width, height }).catch(console.error);
+}
 function renderServerList() {
   const listEl = document.getElementById("server-list");
   listEl.innerHTML = "";
@@ -250,18 +275,6 @@ function renderServerList() {
     `;
     listEl.appendChild(li);
   });
-
-  document.querySelectorAll(".connect-btn").forEach((btn) => {
-    btn.addEventListener("click", () => connectToServer(btn.dataset.id));
-  });
-
-  document.querySelectorAll(".edit-btn").forEach((btn) => {
-    btn.addEventListener("click", () => openEditModal(btn.dataset.id));
-  });
-
-  document.querySelectorAll(".delete-btn").forEach((btn) => {
-    btn.addEventListener("click", () => deleteServer(btn.dataset.id));
-  });
 }
 
 async function connectToServer(id) {
@@ -273,7 +286,8 @@ async function connectToServer(id) {
   term.writeln("\x1b[1;33mConnecting...\x1b[0m");
 
   try {
-    serverId = await invoke("connect", { server });
+    shellId = await invoke("connect", { server });
+    syncPtySize();
   } catch (error) {
     console.error("Failed to connect:", error);
     term.reset();
@@ -283,11 +297,11 @@ async function connectToServer(id) {
 }
 
 async function disconnectFromServer() {
-  if (!serverId) return;
+  if (!currentServer) return;
 
   try {
-    await invoke("disconnect", { serverId });
-    serverId = null;
+    await invoke("disconnect", { serverId: currentServer.id });
+    shellId = null;
     currentServer = null;
   } catch (error) {
     console.error("Failed to disconnect:", error);
@@ -416,33 +430,6 @@ function renderSnippetList() {
     `;
     listEl.appendChild(li);
 
-    li.addEventListener("click", (e) => {
-      if (!e.target.classList.contains("snippet-run-btn") && !e.target.classList.contains("snippet-edit-btn") && !e.target.classList.contains("snippet-delete-btn")) {
-        executeSnippet(snippet);
-      }
-    });
-  });
-
-  document.querySelectorAll(".snippet-run-btn").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const snippet = snippets.find((s) => s.id === btn.dataset.id);
-      if (snippet) executeSnippet(snippet);
-    });
-  });
-
-  document.querySelectorAll(".snippet-edit-btn").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openSnippetEditModal(btn.dataset.id);
-    });
-  });
-
-  document.querySelectorAll(".snippet-delete-btn").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      deleteSnippet(btn.dataset.id);
-    });
   });
 }
 
@@ -527,9 +514,55 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("cancel-btn").addEventListener("click", closeModal);
   document.getElementById("server-form").addEventListener("submit", saveServer);
   document.getElementById("disconnect-btn").addEventListener("click", disconnectFromServer);
+  document.getElementById("server-list").addEventListener("click", (e) => {
+    const target = e.target;
+    const button = target.closest("button");
+    if (!button) return;
+    const id = button.dataset.id;
+    if (!id) return;
+    if (button.classList.contains("connect-btn")) {
+      connectToServer(id);
+      return;
+    }
+    if (button.classList.contains("edit-btn")) {
+      openEditModal(id);
+      return;
+    }
+    if (button.classList.contains("delete-btn")) {
+      deleteServer(id);
+    }
+  });
   document.getElementById("add-snippet-btn").addEventListener("click", openSnippetModal);
   document.getElementById("snippet-cancel-btn").addEventListener("click", closeSnippetModal);
   document.getElementById("snippet-form").addEventListener("submit", saveSnippet);
+  document.getElementById("snippet-list").addEventListener("click", (e) => {
+    const target = e.target;
+    const button = target.closest("button");
+    if (button) {
+      const id = button.dataset.id;
+      if (!id) return;
+      if (button.classList.contains("snippet-run-btn")) {
+        const snippet = snippets.find((s) => s.id === id);
+        if (snippet) executeSnippet(snippet);
+        return;
+      }
+      if (button.classList.contains("snippet-edit-btn")) {
+        openSnippetEditModal(id);
+        return;
+      }
+      if (button.classList.contains("snippet-delete-btn")) {
+        deleteSnippet(id);
+      }
+      return;
+    }
+
+    const item = target.closest("li");
+    if (!item) return;
+    const id = item.querySelector("button")?.dataset.id;
+    if (!id) return;
+    const snippet = snippets.find((s) => s.id === id);
+    if (snippet) executeSnippet(snippet);
+  });
   document.getElementById("auth-type").addEventListener("change", (e) => {
     if (e.target.value === "password") {
       document.getElementById("password-field").classList.remove("hidden");
@@ -548,7 +581,8 @@ window.addEventListener("DOMContentLoaded", () => {
 
   listen("terminal-output", (event) => {
     if (term) {
-      term.write(event.payload);
+      const output = typeof event.payload === 'string' ? event.payload : event.payload.output;
+      term.write(output);
       if (autoScrollEnabled) {
         term.scrollToBottom();
       }
