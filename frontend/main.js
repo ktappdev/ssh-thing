@@ -53,6 +53,44 @@ function initTerminal() {
     }
   });
 
+  term.onKey((event) => {
+    const { domEvent } = event;
+    if (domEvent.ctrlKey || domEvent.metaKey) {
+      let input = null;
+      switch (domEvent.key) {
+        case 'c':
+          input = '\x03';
+          break;
+        case 'd':
+          input = '\x04';
+          break;
+        case 'z':
+          input = '\x1a';
+          break;
+        case 'l':
+          input = '\x0c';
+          break;
+        case 'a':
+          input = '\x01';
+          break;
+        case 'e':
+          input = '\x05';
+          break;
+        case 'u':
+          input = '\x15';
+          break;
+        case 'k':
+          input = '\x0b';
+          break;
+      }
+      if (input && serverId) {
+        invoke("send_input", { shellId: serverId, input }).catch(console.error);
+        domEvent.preventDefault();
+        domEvent.stopPropagation();
+      }
+    }
+  });
+
   term.onScroll((newRow) => {
     const maxScroll = term.rows - 1;
     if (newRow < maxScroll) {
