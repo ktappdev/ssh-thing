@@ -3,6 +3,7 @@ const { listen } = window.__TAURI__.event;
 
 let servers = [];
 let currentConnectionState = { type: "Disconnected" };
+let currentServer = null;
 let term;
 let fitAddon;
 let serverId;
@@ -44,6 +45,8 @@ function updateConnectionState(state) {
   currentConnectionState = state;
   const statusEl = document.getElementById("connection-status");
   const disconnectBtn = document.getElementById("disconnect-btn");
+  const statusBarHost = document.getElementById("status-bar-host");
+  const statusBarState = document.getElementById("status-bar-state");
   
   if (!term) return;
   
@@ -54,6 +57,11 @@ function updateConnectionState(state) {
       statusEl.textContent = "Connecting...";
       statusEl.className = "text-sm text-yellow-600 dark:text-yellow-400";
       disconnectBtn.classList.add("hidden");
+      if (currentServer) {
+        statusBarHost.textContent = `${currentServer.user}@${currentServer.host}:${currentServer.port}`;
+      }
+      statusBarState.textContent = "Connecting";
+      statusBarState.className = "font-medium text-yellow-600 dark:text-yellow-400";
       fitAddon.fit();
       break;
     case "Connected":
@@ -62,6 +70,11 @@ function updateConnectionState(state) {
       statusEl.textContent = "Connected";
       statusEl.className = "text-sm text-green-600 dark:text-green-400";
       disconnectBtn.classList.remove("hidden");
+      if (currentServer) {
+        statusBarHost.textContent = `${currentServer.user}@${currentServer.host}:${currentServer.port}`;
+      }
+      statusBarState.textContent = "Connected";
+      statusBarState.className = "font-medium text-green-600 dark:text-green-400";
       fitAddon.fit();
       break;
     case "Disconnected":
@@ -70,6 +83,9 @@ function updateConnectionState(state) {
       statusEl.textContent = "Disconnected";
       statusEl.className = "text-sm text-gray-600 dark:text-gray-400";
       disconnectBtn.classList.add("hidden");
+      statusBarHost.textContent = "Not connected";
+      statusBarState.textContent = "Disconnected";
+      statusBarState.className = "font-medium text-gray-600 dark:text-gray-400";
       fitAddon.fit();
       break;
     case "Error":
@@ -78,6 +94,11 @@ function updateConnectionState(state) {
       statusEl.textContent = "Error: " + state.error;
       statusEl.className = "text-sm text-red-600 dark:text-red-400";
       disconnectBtn.classList.add("hidden");
+      if (currentServer) {
+        statusBarHost.textContent = `${currentServer.user}@${currentServer.host}:${currentServer.port}`;
+      }
+      statusBarState.textContent = "Error";
+      statusBarState.className = "font-medium text-red-600 dark:text-red-400";
       fitAddon.fit();
       break;
   }
@@ -126,6 +147,7 @@ async function connectToServer(id) {
   const server = servers.find((s) => s.id === id);
   if (!server) return;
 
+  currentServer = server;
   term.reset();
   term.writeln("\x1b[1;33mConnecting...\x1b[0m");
 
@@ -144,6 +166,7 @@ async function disconnectFromServer() {
   try {
     await invoke("disconnect", { serverId });
     serverId = null;
+    currentServer = null;
   } catch (error) {
     console.error("Failed to disconnect:", error);
     alert("Failed to disconnect: " + error);
