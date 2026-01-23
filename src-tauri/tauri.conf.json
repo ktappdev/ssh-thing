@@ -42,7 +42,9 @@
       "icons/Square310x310Logo.png",
       "icons/StoreLogo.png"
     ],
-    "resources": null,
+    "resources": [
+      "../MACOS_INSTALL.md"
+    ],
     "longDescription": "SSH Thing - A modern SSH client built with Tauri",
     "shortDescription": "SSH client application",
     "windows": {

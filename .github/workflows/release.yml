@@ -36,6 +36,16 @@ jobs:
           asset_name: ssh-thing-windows-x64.msi
           asset_content_type: application/x-msi
 
+      - name: Upload macOS install notes
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: MACOS_INSTALL.md
+          asset_name: MACOS_INSTALL.md
+          asset_content_type: text/markdown
+
   build-macos:
     name: Build macOS (.dmg)
     runs-on: macos-latest
@@ -62,6 +72,16 @@ jobs:
           asset_path: src-tauri/target/release/bundle/dmg/ssh-thing_0.1.0_aarch64.dmg
           asset_name: ssh-thing-macos-arm64.dmg
           asset_content_type: application/x-apple-diskimage
+
+      - name: Upload macOS install notes
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: MACOS_INSTALL.md
+          asset_name: MACOS_INSTALL.md
+          asset_content_type: text/markdown
 
   build-linux:
     name: Build Linux (.deb, .AppImage)
@@ -108,3 +128,13 @@ jobs:
           asset_path: src-tauri/target/release/bundle/appimage/ssh-thing_0.1.0_amd64.AppImage
           asset_name: ssh-thing-linux-amd64.AppImage
           asset_content_type: application/x-executable
+
+      - name: Upload macOS install notes
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: MACOS_INSTALL.md
+          asset_name: MACOS_INSTALL.md
+          asset_content_type: text/markdown

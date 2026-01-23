@@ -6,3 +6,9 @@ This template should help get you started developing with Tauri in vanilla HTML,
 
 - [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
 # ssh-thing
+
+## macOS install (Gatekeeper)
+
+If macOS blocks the app because it’s from an unidentified developer, you can still run it.
+
+See: `MACOS_INSTALL.md`
