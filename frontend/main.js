@@ -1,8 +1,7 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
-const DEFAULT_MAX_SESSIONS = 5;
-let maxSessions = DEFAULT_MAX_SESSIONS;
+const MAX_CONNECTIONS = 5;
 let servers = [];
 let sessions = new Map(); // Map<serverId | welcomeId, SessionState>
 let activeSessionId = null;
@@ -123,7 +122,7 @@ function createTerminalPane(sessionId) {
   paneFitAddon.fit();
 
   if (sessionId === welcomeSessionId) {
-    termInstance.writeln("\x1b[1;32mSSH Terminal\x1b[0m");
+    termInstance.writeln("\x1b[1;32mSSH Thing\x1b[0m");
     termInstance.writeln("Connect to a server to begin...\r\n");
   } else {
     termInstance.writeln("\x1b[1;32mConnecting...\x1b[0m\r\n");
@@ -246,20 +245,6 @@ function updateSessionCount() {
   countEl.textContent = `Sessions: ${connectedCount}`;
 }
 
-function loadMaxSessions() {
-  const saved = parseInt(localStorage.getItem("maxSessions") || "", 10);
-  if (!Number.isNaN(saved) && saved > 0 && saved <= 20) {
-    maxSessions = saved;
-  } else {
-    maxSessions = DEFAULT_MAX_SESSIONS;
-  }
-  const capLabel = document.getElementById("session-cap-label");
-  if (capLabel) {
-    capLabel.textContent = `Max ${maxSessions} sessions`;
-  }
-  updateSessionCount();
-}
-
 function ensureWelcomeSession() {
   if (sessions.has(welcomeSessionId)) return;
   const { term, fitAddon, container } = createTerminalPane(welcomeSessionId);
@@ -333,11 +318,17 @@ function toggleTheme() {
 }
 
 function toggleTerminalBackground() {
-  terminalTransparent = !terminalTransparent;
-  document.body.classList.toggle('terminal-transparent', terminalTransparent);
+  const isDark = document.documentElement.classList.contains('dark');
+  if (!isDark) {
+    // Disable glass in light mode
+    terminalTransparent = false;
+  } else {
+    terminalTransparent = !terminalTransparent;
+  }
+  document.body.classList.toggle('terminal-transparent', terminalTransparent && isDark);
   const label = document.getElementById('terminal-bg-label');
   if (label) {
-    label.textContent = terminalTransparent ? 'Glass' : 'Solid';
+    label.textContent = terminalTransparent && isDark ? 'Glass' : 'Solid';
   }
   sessions.forEach((session) => {
     session.term?.setOption('theme', getTerminalTheme());
@@ -346,11 +337,12 @@ function toggleTerminalBackground() {
 
 function getTerminalTheme() {
   const isDark = document.documentElement.classList.contains('dark');
+  const background = !isDark ? '#0f111a' : (terminalTransparent ? 'transparent' : '#0f111a');
   return {
-    background: terminalTransparent ? 'transparent' : (isDark ? '#11111b' : '#f5f7ff'),
-    foreground: isDark ? '#cdd6f4' : '#4c4f69',
-    cursor: isDark ? '#f5c2e7' : '#dc8a78',
-    selection: isDark ? 'rgba(108, 112, 134, 0.5)' : 'rgba(188, 192, 204, 0.45)',
+    background,
+    foreground: isDark ? '#cdd6f4' : '#e6e9ef',
+    cursor: isDark ? '#f5c2e7' : '#82aaff',
+    selection: 'rgba(148, 163, 184, 0.35)',
   };
 }
 
@@ -436,6 +428,9 @@ function updateConnectionState(session, state) {
       logConnectionEvent(`Error: ${normalizedState.error}`, label, "error");
       break;
   }
+
+  // Refresh server list so badges/buttons reflect latest state
+  renderServerList();
 }
 function normalizeConnectionState(state) {
   if (!state) {
@@ -574,7 +569,7 @@ function renderServerList() {
     const isDisconnected = connectionState.type === "Disconnected";
     
     const div = document.createElement("div");
-    div.className = `server-item bg-white dark:bg-gray-800 border ${isActive ? 'border-blue-500 border-l-4' : 'border-gray-200 dark:border-gray-700'} rounded-lg p-3 shadow-sm hover:shadow-md transition-all group`;
+    div.className = `server-item bg-white dark:bg-[#1f2335] border ${isActive ? 'border-blue-400' : 'border-gray-200 dark:border-gray-700'} rounded-2xl p-4 shadow-lg hover:shadow-xl transition-all group flex flex-col gap-3`;
     
     // Determine auth type label
     let authLabel = "Key";
@@ -606,27 +601,32 @@ function renderServerList() {
         statusText = "Disconnected";
     }
 
+    let statusBadge = "";
     let buttonLabel = "Connect";
-    let buttonClass = "bg-green-500 hover:bg-green-600";
+    let buttonClass = "bg-emerald-500 hover:bg-emerald-600";
     let buttonIcon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>';
     if (isConnected) {
-      buttonLabel = isActive ? "Active" : "Switch";
-      buttonClass = "bg-blue-500 hover:bg-blue-600";
-      buttonIcon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>';
-    } else if (isErrored || isDisconnected) {
-      buttonLabel = "Reconnect";
-      buttonClass = "bg-amber-500 hover:bg-amber-600";
+      statusBadge = '<span class="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-green-600 text-white">Connected</span>';
+      buttonLabel = "Disconnect";
+      buttonClass = "bg-rose-500 hover:bg-rose-600";
+      buttonIcon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>';
     } else if (isConnecting) {
+      statusBadge = '<span class="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-yellow-500 text-white">Connecting</span>';
       buttonLabel = "Connecting";
       buttonClass = "bg-yellow-500 hover:bg-yellow-600";
+    } else if (isErrored || isDisconnected) {
+      statusBadge = '<span class="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-amber-500 text-white">Offline</span>';
+      buttonLabel = "Connect";
+      buttonClass = "bg-emerald-500 hover:bg-emerald-600";
     }
 
     div.innerHTML = `
-      <div class="flex justify-between items-start mb-2">
-        <div class="font-medium text-gray-900 dark:text-gray-100 truncate pr-2 flex flex-col" title="${displayName}">
-            <div class="flex items-center gap-2">
+      <div class="flex justify-between items-start gap-3">
+        <div class="font-medium text-gray-900 dark:text-gray-100 truncate pr-2 flex flex-col gap-1" title="${displayName}">
+            <div class="flex items-center gap-2 flex-wrap">
                 ${statusDot}
                 <span class="text-blue-600 dark:text-blue-400 font-bold">${displayName}</span>
+                ${statusBadge}
             </div>
             <span class="text-xs text-gray-500 dark:text-gray-400">${subtitle}</span>
         </div>
@@ -647,7 +647,7 @@ function renderServerList() {
                 ${authLabel}
             </span>
         </div>
-        <button class="connect-btn ${buttonClass} text-white px-3 py-1 rounded shadow-sm hover:shadow transition-all font-medium flex items-center gap-1" data-id="${server.id}">
+        <button class="connect-btn ${buttonClass} text-white px-4 py-2 rounded-lg shadow-sm hover:shadow transition-all font-semibold flex items-center gap-2" data-id="${server.id}">
             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">${buttonIcon}</svg>
             ${buttonLabel}
         </button>
@@ -683,10 +683,10 @@ async function connectToServer(id) {
   const isExistingActive =
     existingSession && (existingSession.connectionState.type === "Connected" || existingSession.connectionState.type === "Connecting");
 
-  if (!isExistingActive && activeSessionsCount >= maxSessions) {
+  if (!isExistingActive && activeSessionsCount >= MAX_CONNECTIONS) {
     showAlert(
       "Session Limit Reached",
-      `You can have up to ${maxSessions} active sessions. Disconnect one to open another.`,
+      `You can have up to ${MAX_CONNECTIONS} active sessions. Disconnect one to open another.`,
       "warning"
     );
     return;
@@ -714,8 +714,8 @@ async function connectToServer(id) {
   }
 }
 
-async function disconnectFromServer() {
-  const session = getActiveSession();
+async function disconnectFromServer(serverId = null) {
+  const session = serverId ? sessions.get(serverId) : getActiveSession();
   if (!session || !session.server) return;
 
   try {
@@ -1082,13 +1082,17 @@ function initTabs() {
 
     function setActiveTab(tab) {
         if (tab === 'servers') {
-            tabServers.className = 'flex-1 py-3 text-sm font-medium border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 bg-gray-50 dark:bg-gray-700/50';
-            tabSnippets.className = 'flex-1 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200';
+            tabServers.classList.add('active');
+            tabServers.classList.remove('inactive');
+            tabSnippets.classList.add('inactive');
+            tabSnippets.classList.remove('active');
             viewServers.classList.remove('hidden');
             viewSnippets.classList.add('hidden');
         } else {
-            tabSnippets.className = 'flex-1 py-3 text-sm font-medium border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 bg-gray-50 dark:bg-gray-700/50';
-            tabServers.className = 'flex-1 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200';
+            tabSnippets.classList.add('active');
+            tabSnippets.classList.remove('inactive');
+            tabServers.classList.add('inactive');
+            tabServers.classList.remove('active');
             viewSnippets.classList.remove('hidden');
             viewServers.classList.add('hidden');
         }
@@ -1096,6 +1100,11 @@ function initTabs() {
 
     tabServers.addEventListener('click', () => setActiveTab('servers'));
     tabSnippets.addEventListener('click', () => setActiveTab('snippets'));
+
+    // initialize
+    tabServers.classList.add('tab-btn');
+    tabSnippets.classList.add('tab-btn');
+    setActiveTab('servers');
 }
 
 function toggleFocusMode() {
@@ -1120,7 +1129,6 @@ function disableInputCorrections() {
 
 window.addEventListener("DOMContentLoaded", () => {
   initTheme();
-  loadMaxSessions();
   initTabs(); // Initialize tabs
   disableInputCorrections();
   
@@ -1137,24 +1145,6 @@ window.addEventListener("DOMContentLoaded", () => {
     serverFilterInput.addEventListener("input", (event) => {
       serverFilterTerm = event.target.value || "";
       renderServerList();
-    });
-  }
-
-  const maxSessionsInput = document.getElementById("max-sessions-input");
-  if (maxSessionsInput) {
-    maxSessionsInput.value = String(maxSessions);
-    maxSessionsInput.addEventListener("change", (event) => {
-      const value = parseInt(event.target.value, 10);
-      if (!Number.isNaN(value) && value > 0 && value <= 20) {
-        maxSessions = value;
-        localStorage.setItem("maxSessions", String(value));
-        const capLabel = document.getElementById("session-cap-label");
-        if (capLabel) {
-          capLabel.textContent = `Max ${maxSessions} sessions`;
-        }
-      } else {
-        event.target.value = String(maxSessions);
-      }
     });
   }
 
@@ -1206,6 +1196,10 @@ window.addEventListener("DOMContentLoaded", () => {
       const session = sessions.get(id);
       if (session && session.connectionState.type === "Connected") {
         setActiveSession(id);
+        const confirmed = confirm("Disconnect from this server?");
+        if (confirmed) {
+          disconnectFromServer(id);
+        }
       } else {
         connectToServer(id);
       }

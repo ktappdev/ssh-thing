@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SSH Terminal</title>
+    <title>SSH Thing</title>
     <link rel="stylesheet" href="./vendor/tailwind.min.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
@@ -26,7 +26,8 @@
         --text-primary: #4c4f69;
         --text-secondary: #6c6f85;
         --border-color: #ccd0da;
-        --terminal-bg: #e6e9ef;
+        --terminal-bg: #0f111a;
+        font-size: clamp(14px, 0.9vw + 11px, 16px);
       }
 
       .dark {
@@ -44,13 +45,17 @@
         --text-primary: #cdd6f4;
         --text-secondary: #a6adc8;
         --border-color: #45475a;
-        --terminal-bg: #11111b;
+        --terminal-bg: #0f111a;
       }
 
       #alert-icon.error { background-color: #fee2e2; color: #dc2626; }
       #alert-icon.warning { background-color: #fef3c7; color: #d97706; }
       #alert-icon.success { background-color: #dcfce7; color: #16a34a; }
       #alert-icon.info { background-color: #dbeafe; color: #2563eb; }
+
+      html, body {
+        min-width: 1200px;
+      }
 
       .app-shell {
         font-family: "Space Grotesk", "Segoe UI", sans-serif;
@@ -63,6 +68,13 @@
         background: radial-gradient(circle at top left, rgba(203, 166, 247, 0.18), transparent 45%),
           radial-gradient(circle at bottom right, rgba(137, 180, 250, 0.16), transparent 45%),
           #1e1e2e;
+      }
+
+      #app-container {
+        max-width: 1320px;
+        min-width: 1200px;
+        margin: 0 auto;
+        width: 100%;
       }
 
       .server-item, .snippet-item {
@@ -150,9 +162,15 @@
       }
 
       #terminal-container {
-        padding: 2px;
+        padding: 2px 14px; /* slightly more side inset */
         box-sizing: border-box;
         background: var(--terminal-bg);
+        border-radius: 16px;
+        box-shadow:
+          inset 0 16px 40px rgba(0, 0, 0, 0.36),
+          inset 0 -16px 44px rgba(0, 0, 0, 0.32),
+          0 24px 64px rgba(0, 0, 0, 0.32);
+        border: 1px solid rgba(148, 163, 184, 0.38);
       }
 
       /* Let the parent provide the background color so theme matches Catppuccin */
@@ -196,6 +214,24 @@
         background: #6b7280;
       }
 
+      .tab-btn {
+        padding: 0.85rem 1.2rem;
+        font-weight: 600;
+        transition: all 0.2s ease;
+      }
+
+      .tab-btn.active {
+        background: linear-gradient(135deg, #8aadf4, #7287fd);
+        color: #ffffff !important;
+        text-shadow: 0 1px 3px rgba(0,0,0,0.45);
+        border-bottom: 3px solid #b4befe;
+      }
+
+      .tab-btn.inactive {
+        background: transparent;
+        color: #cdd6f4;
+      }
+
       .focus-mode-active #sidebar,
       .focus-mode-active #header,
       .focus-mode-active #status-bar,
@@ -215,6 +251,9 @@
       .focus-mode-active #terminal-container {
         height: 100% !important;
         border-radius: 0;
+        padding: 0 2px;
+        box-shadow: none;
+        border: none;
       }
 
       #exit-focus-btn {
@@ -437,13 +476,6 @@
           <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
             <div class="flex items-center gap-3 flex-wrap">
               <h2 class="font-semibold text-gray-700 dark:text-gray-200">Hosts</h2>
-              <div class="flex items-center gap-2 text-[11px] text-gray-600 dark:text-gray-300">
-                <span id="session-cap-label" class="px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700">Max 5 sessions</span>
-                <label class="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700">
-                  <span class="uppercase tracking-wide text-[10px] text-gray-500">Max</span>
-                  <input id="max-sessions-input" type="number" min="1" max="20" value="5" class="w-14 text-xs bg-transparent focus:outline-none text-gray-700 dark:text-gray-200" />
-                </label>
-              </div>
             </div>
             <button id="add-server-btn" class="flex items-center gap-1 bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded text-sm transition-colors shadow-sm">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
@@ -480,7 +512,7 @@
         <!-- Header -->
         <header id="header" class="flex justify-between items-center mb-4 flex-shrink-0 header-glass rounded-lg px-4 py-3">
           <div class="flex items-center gap-3">
-            <h1 class="text-xl font-bold text-gray-800 dark:text-white tracking-tight">SSH Terminal</h1>
+            <h1 class="text-xl font-bold text-gray-800 dark:text-white tracking-tight">SSH Thing</h1>
             <div id="connection-status" class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
               Disconnected
             </div>
