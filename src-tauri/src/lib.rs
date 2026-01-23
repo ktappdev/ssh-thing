@@ -436,6 +436,7 @@ mod tests {
     fn test_server_connection_serialization() {
         let server = ServerConnection {
             id: "test-id".to_string(),
+            nickname: Some("Test Server".to_string()),
             host: "192.168.1.1".to_string(),
             port: 22,
             user: "testuser".to_string(),
@@ -464,6 +465,7 @@ mod tests {
     fn test_key_auth_serialization() {
         let server = ServerConnection {
             id: "key-test".to_string(),
+            nickname: None,
             host: "server.example.com".to_string(),
             port: 2222,
             user: "admin".to_string(),
@@ -556,6 +558,7 @@ mod tests {
         for port in ports {
             let server = ServerConnection {
                 id: format!("server-{}", port),
+                nickname: None,
                 host: "localhost".to_string(),
                 port,
                 user: "user".to_string(),
@@ -578,6 +581,7 @@ mod tests {
         let servers = vec![
             ServerConnection {
                 id: "1".to_string(),
+                nickname: Some("Host 1".to_string()),
                 host: "host1.com".to_string(),
                 port: 22,
                 user: "user1".to_string(),
@@ -587,6 +591,7 @@ mod tests {
             },
             ServerConnection {
                 id: "2".to_string(),
+                nickname: Some("Host 2".to_string()),
                 host: "host2.com".to_string(),
                 port: 2222,
                 user: "user2".to_string(),
