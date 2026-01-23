@@ -360,7 +360,53 @@
       .opacity-100 { opacity: 1 !important; }
       .group:hover .group-hover\:opacity-100 { opacity: 1 !important; }
       .transition-opacity { transition-property: opacity; transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); transition-duration: 150ms; }
-      
+
+      /* Ensure server action buttons show on card hover */
+      .server-actions {
+        opacity: 0 !important;
+        transition: opacity 0.15s ease-in-out;
+        position: relative;
+      }
+
+      .server-item:hover .server-actions {
+        opacity: 1 !important;
+      }
+
+      .server-action-btn {
+        padding: 0.375rem;
+        border-radius: 0.375rem;
+        color: #9ca3af;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: color 0.15s ease, background-color 0.15s ease;
+      }
+
+      .server-action-btn:hover {
+        color: #3b82f6;
+        background: rgba(239, 246, 255, 1);
+      }
+
+      .server-action-btn.delete:hover {
+        color: #ef4444;
+        background: rgba(254, 242, 242, 1);
+      }
+
+      .dark .server-action-btn:hover {
+        color: #89b4fa;
+        background: rgba(137, 180, 250, 0.2);
+      }
+
+      .dark .server-action-btn.delete:hover {
+        color: #f38ba8;
+        background: rgba(243, 139, 168, 0.2);
+      }
+
+      .server-action-icon {
+        width: 16px;
+        height: 16px;
+      }
+
       /* Additional hover utilities that might be missing */
       .hover\:text-blue-500:hover { color: rgb(59 130 246) !important; }
       .hover\:text-red-500:hover { color: rgb(239 68 68) !important; }
@@ -389,7 +435,16 @@
         <!-- Tab Content: Servers -->
         <div id="view-servers" class="flex-1 flex flex-col min-h-0">
           <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
-            <h2 class="font-semibold text-gray-700 dark:text-gray-200">Hosts</h2>
+            <div class="flex items-center gap-3 flex-wrap">
+              <h2 class="font-semibold text-gray-700 dark:text-gray-200">Hosts</h2>
+              <div class="flex items-center gap-2 text-[11px] text-gray-600 dark:text-gray-300">
+                <span id="session-cap-label" class="px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700">Max 5 sessions</span>
+                <label class="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700">
+                  <span class="uppercase tracking-wide text-[10px] text-gray-500">Max</span>
+                  <input id="max-sessions-input" type="number" min="1" max="20" value="5" class="w-14 text-xs bg-transparent focus:outline-none text-gray-700 dark:text-gray-200" />
+                </label>
+              </div>
+            </div>
             <button id="add-server-btn" class="flex items-center gap-1 bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded text-sm transition-colors shadow-sm">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
               <span>Add</span>
@@ -397,7 +452,7 @@
           </div>
           <div id="server-filter-wrap" class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 hidden">
             <label for="server-filter" class="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Filter hosts</label>
-            <input id="server-filter" type="text" placeholder="Search nickname, user, or host" class="w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 dark:text-white text-sm" />
+            <input id="server-filter" type="text" placeholder="Search nickname, user, or host" autocorrect="off" autocapitalize="off" spellcheck="false" class="w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 dark:text-white text-sm" />
           </div>
           <div class="flex-1 overflow-y-auto p-3 space-y-3" id="server-list">
             <!-- Server items will be injected here -->
@@ -457,6 +512,11 @@
 
         <!-- Terminal Area -->
         <div id="terminal-wrapper" class="terminal-shell terminal-surface flex-1 rounded-lg overflow-hidden relative flex flex-col min-h-0">
+            <!-- Session Tabs -->
+            <div id="session-tabs" class="hidden border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-1 flex items-center gap-1 overflow-x-auto">
+                <!-- Session tabs will be injected here -->
+            </div>
+            
             <div class="absolute top-2 right-2 z-10 flex gap-2">
                 <button id="focus-btn" class="p-1.5 bg-gray-800/80 hover:bg-gray-700 text-white rounded opacity-50 hover:opacity-100 transition-all" title="Focus Mode">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
@@ -470,9 +530,12 @@
         
         <!-- Status Bar -->
         <div id="status-bar" class="mt-3 flex justify-between items-center px-4 py-2 bg-white dark:bg-gray-800 rounded-lg text-sm border border-gray-200 dark:border-gray-700 shadow-sm flex-shrink-0">
-          <div class="flex items-center gap-2">
-            <div class="w-2 h-2 rounded-full bg-gray-400" id="status-indicator"></div>
-            <div id="status-bar-host" class="text-gray-600 dark:text-gray-400 font-mono text-xs">Not connected</div>
+          <div class="flex items-center gap-3">
+            <div class="flex items-center gap-2">
+              <div class="w-2 h-2 rounded-full bg-gray-400" id="status-indicator"></div>
+              <div id="status-bar-host" class="text-gray-600 dark:text-gray-400 font-mono text-xs">Not connected</div>
+            </div>
+            <div id="session-count" class="text-[11px] text-gray-500 dark:text-gray-400">Sessions: 0</div>
           </div>
           <div id="status-bar-state" class="font-medium text-xs uppercase tracking-wide text-gray-500">Idle</div>
         </div>
@@ -504,6 +567,26 @@
         </div>
         <div class="flex justify-end">
           <button id="alert-ok-btn" class="px-4 py-2 rounded bg-gray-500 hover:bg-gray-600 text-white text-sm">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="delete-confirm-modal" class="hidden fixed inset-0 modal-backdrop z-50">
+      <div class="modal-content bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-96 max-w-sm mx-4">
+        <div class="flex items-center gap-3 mb-4">
+          <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-red-50 text-red-600">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-bold">Delete host?</h3>
+            <p id="delete-confirm-message" class="text-sm text-gray-600 dark:text-gray-400">This action cannot be undone.</p>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2">
+          <button id="delete-cancel-btn" class="px-4 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700">Cancel</button>
+          <button id="delete-confirm-btn" class="px-4 py-2 rounded bg-red-500 hover:bg-red-600 text-white">Delete</button>
         </div>
       </div>
     </div>
@@ -546,11 +629,11 @@
           <input type="hidden" id="server-id" />
           <div>
             <label class="block text-sm font-medium mb-1">Nickname (optional)</label>
-            <input type="text" id="server-nickname" class="w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 dark:text-white" />
+            <input type="text" id="server-nickname" autocorrect="off" autocapitalize="off" spellcheck="false" class="w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 dark:text-white" />
           </div>
           <div>
             <label class="block text-sm font-medium mb-1">Host</label>
-            <input type="text" id="server-host" required class="w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 dark:text-white" />
+            <input type="text" id="server-host" required autocorrect="off" autocapitalize="off" spellcheck="false" class="w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 dark:text-white" />
           </div>
           <div>
             <label class="block text-sm font-medium mb-1">Port</label>
@@ -558,7 +641,7 @@
           </div>
           <div>
             <label class="block text-sm font-medium mb-1">Username</label>
-            <input type="text" id="server-user" required class="w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 dark:text-white" />
+            <input type="text" id="server-user" required autocorrect="off" autocapitalize="off" spellcheck="false" class="w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 dark:text-white" />
           </div>
           <div>
             <label class="block text-sm font-medium mb-1">Auth Type</label>
@@ -569,11 +652,11 @@
           </div>
           <div id="password-field">
             <label class="block text-sm font-medium mb-1">Password</label>
-            <input type="password" id="server-password" class="w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 dark:text-white" />
+            <input type="password" id="server-password" autocorrect="off" autocapitalize="off" spellcheck="false" class="w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 dark:text-white" />
           </div>
           <div id="key-field" class="hidden">
             <label class="block text-sm font-medium mb-1">Private Key</label>
-            <textarea id="server-key" rows="4" class="w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 dark:text-white"></textarea>
+            <textarea id="server-key" rows="4" autocorrect="off" autocapitalize="off" spellcheck="false" class="w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 dark:text-white"></textarea>
           </div>
           <div class="flex justify-end gap-2 mt-6">
             <button type="button" id="cancel-btn" class="px-4 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700">Cancel</button>
@@ -590,15 +673,15 @@
           <input type="hidden" id="snippet-id" />
           <div>
             <label class="block text-sm font-medium mb-1">Name</label>
-            <input type="text" id="snippet-name" required class="w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 dark:text-white" />
+            <input type="text" id="snippet-name" required autocorrect="off" autocapitalize="off" spellcheck="false" class="w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 dark:text-white" />
           </div>
           <div>
             <label class="block text-sm font-medium mb-1">Command</label>
-            <textarea id="snippet-command" rows="4" required class="w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 dark:text-white font-mono text-sm"></textarea>
+            <textarea id="snippet-command" rows="4" required autocorrect="off" autocapitalize="off" spellcheck="false" class="w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 dark:text-white font-mono text-sm"></textarea>
           </div>
           <div>
             <label class="block text-sm font-medium mb-1">Description (optional)</label>
-            <input type="text" id="snippet-description" class="w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 dark:text-white" />
+            <input type="text" id="snippet-description" autocorrect="off" autocapitalize="off" spellcheck="false" class="w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 dark:text-white" />
           </div>
           <div class="flex justify-end gap-2 mt-6">
             <button type="button" id="snippet-cancel-btn" class="px-4 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700">Cancel</button>

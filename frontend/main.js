@@ -1,101 +1,146 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
+const DEFAULT_MAX_SESSIONS = 5;
+let maxSessions = DEFAULT_MAX_SESSIONS;
 let servers = [];
-let currentConnectionState = { type: "Disconnected" };
-let currentServer = null;
-let term;
-let fitAddon;
-let serverId;
-let shellId;
-let autoScrollEnabled = true;
+let sessions = new Map(); // Map<serverId | welcomeId, SessionState>
+let activeSessionId = null;
+const welcomeSessionId = "__welcome__";
 let connectionLog = [];
 let pendingHostKey = null;
+let pendingDeleteServerId = null;
 let localEchoEnabled = false;
 let terminalTransparent = false;
 let serverFilterTerm = "";
 
-function initTheme() {
-  const savedTheme = localStorage.getItem('theme');
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const isDark = savedTheme ? savedTheme === 'dark' : prefersDark;
-  if (isDark) {
-    document.documentElement.classList.add('dark');
-  } else {
-    document.documentElement.classList.remove('dark');
+function getTerminalContainer() {
+  const container = document.getElementById("terminal-container");
+  if (!container) {
+    throw new Error("Terminal container not found");
+  }
+  container.classList.add("relative");
+  return container;
+}
+
+function updateStatusBarForActiveSession() {
+  const statusBarHost = document.getElementById("status-bar-host");
+  const statusBarState = document.getElementById("status-bar-state");
+  updateSessionCount();
+  const session = getActiveSession();
+  if (!session || !session.server) {
+    statusBarHost.textContent = "Not connected";
+    statusBarState.textContent = "Idle";
+    statusBarState.className = "font-medium text-xs uppercase tracking-wide text-gray-500";
+    return;
+  }
+
+  const label = `${session.server.user}@${session.server.host}:${session.server.port}`;
+  statusBarHost.textContent = label;
+
+  const state = session.connectionState?.type || "Disconnected";
+  statusBarState.textContent = state;
+  switch (state) {
+    case "Connecting":
+      statusBarState.className = "font-medium text-xs uppercase tracking-wide text-yellow-600 dark:text-yellow-400";
+      break;
+    case "Connected":
+      statusBarState.className = "font-medium text-xs uppercase tracking-wide text-green-600 dark:text-green-400";
+      break;
+    case "Error":
+      statusBarState.className = "font-medium text-xs uppercase tracking-wide text-red-600 dark:text-red-400";
+      break;
+    default:
+      statusBarState.className = "font-medium text-xs uppercase tracking-wide text-gray-600 dark:text-gray-400";
   }
 }
 
-
-function openHostKeyModal(prompt) {
-  pendingHostKey = prompt;
-  document.getElementById("host-key-host").textContent = `${prompt.host}:${prompt.port}`;
-  document.getElementById("host-key-type").textContent = prompt.key_type;
-  document.getElementById("host-key-fingerprint").textContent = prompt.fingerprint;
-  document.getElementById("host-key-modal").classList.remove("hidden");
+function getActiveSession() {
+  return activeSessionId ? sessions.get(activeSessionId) : null;
 }
 
-function closeHostKeyModal() {
-  document.getElementById("host-key-modal").classList.add("hidden");
+function getSessionByShellId(shellId) {
+  if (!shellId) return null;
+  for (const session of sessions.values()) {
+    if (session.shellId === shellId) return session;
+  }
+  return null;
 }
 
-function toggleTheme() {
-  const isDark = document.documentElement.classList.toggle('dark');
-  localStorage.setItem('theme', isDark ? 'dark' : 'light');
-  if (term) {
-    term.setOption('theme', getTerminalTheme());
+function getSessionByServerId(serverId) {
+  if (!serverId) return null;
+  return sessions.get(serverId) || null;
+}
+
+function writeToSessionTerminal(session, output) {
+  if (!session?.term) return;
+  session.term.write(output);
+  if (session.autoScrollEnabled) {
+    session.term.scrollToBottom();
   }
 }
 
-function toggleTerminalBackground() {
-  terminalTransparent = !terminalTransparent;
-  document.body.classList.toggle('terminal-transparent', terminalTransparent);
-  const label = document.getElementById('terminal-bg-label');
-  if (label) {
-    label.textContent = terminalTransparent ? 'Glass' : 'Solid';
+function ensureSession(server) {
+  const existing = sessions.get(server.id);
+  if (existing) {
+    existing.server = server;
+    return existing;
   }
-  if (term) {
-    term.setOption('theme', getTerminalTheme());
-  }
-}
 
-function getTerminalTheme() {
-  const isDark = document.documentElement.classList.contains('dark');
-  return {
-    background: terminalTransparent ? 'transparent' : (isDark ? '#11111b' : '#f5f7ff'),
-    foreground: isDark ? '#cdd6f4' : '#4c4f69',
-    cursor: isDark ? '#f5c2e7' : '#dc8a78',
-    selection: isDark ? 'rgba(108, 112, 134, 0.5)' : 'rgba(188, 192, 204, 0.45)',
+  const { term, fitAddon, container } = createTerminalPane(server.id);
+  const session = {
+    id: server.id,
+    server,
+    shellId: null,
+    term,
+    fitAddon,
+    container,
+    connectionState: { type: "Disconnected" },
+    autoScrollEnabled: true,
   };
+  sessions.set(server.id, session);
+  return session;
 }
 
-function initTerminal() {
-  term = new Terminal({
+function createTerminalPane(sessionId) {
+  const hostContainer = getTerminalContainer();
+  const pane = document.createElement("div");
+  pane.className = "terminal-pane";
+  pane.dataset.sessionId = sessionId;
+  pane.style.display = "none";
+  hostContainer.appendChild(pane);
+
+  const termInstance = new Terminal({
     cursorBlink: true,
     fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
     fontSize: 14,
     theme: getTerminalTheme(),
   });
 
-  fitAddon = new FitAddon.FitAddon();
+  const paneFitAddon = new FitAddon.FitAddon();
+  termInstance.loadAddon(paneFitAddon);
+  termInstance.open(pane);
+  paneFitAddon.fit();
 
-  const terminalEl = document.getElementById("terminal-container");
-  terminalEl.innerHTML = "";
-  term.loadAddon(fitAddon);
-  term.open(terminalEl);
-  fitAddon.fit();
-  syncPtySize();
+  if (sessionId === welcomeSessionId) {
+    termInstance.writeln("\x1b[1;32mSSH Terminal\x1b[0m");
+    termInstance.writeln("Connect to a server to begin...\r\n");
+  } else {
+    termInstance.writeln("\x1b[1;32mConnecting...\x1b[0m\r\n");
+  }
 
-  term.writeln("\x1b[1;32mSSH Terminal\x1b[0m");
-  term.writeln("Connect to a server to begin...\r\n");
-
-  term.onData((data) => {
-    if (shellId && currentConnectionState.type === "Connected") {
-      invoke("send_input", { shellId, input: data }).catch(console.error);
+  // Hook events per session
+  termInstance.onData((data) => {
+    const session = sessions.get(sessionId);
+    if (session && session.shellId && session.connectionState.type === "Connected") {
+      invoke("send_input", { shellId: session.shellId, input: data }).catch(console.error);
     }
   });
 
-  term.onKey((event) => {
+  termInstance.onKey((event) => {
+    const session = sessions.get(sessionId);
+    const shellId = session?.shellId;
+    if (!shellId) return;
     const { domEvent } = event;
     if (domEvent.ctrlKey || domEvent.metaKey) {
       let input = null;
@@ -133,105 +178,262 @@ function initTerminal() {
     }
   });
 
-  term.onScroll((newRow) => {
-    const maxScroll = term.rows - 1;
-    if (newRow < maxScroll) {
-      autoScrollEnabled = false;
-    } else {
-      autoScrollEnabled = true;
-    }
+  termInstance.onScroll((newRow) => {
+    const session = sessions.get(sessionId);
+    if (!session) return;
+    const maxScroll = termInstance.rows - 1;
+    session.autoScrollEnabled = newRow >= maxScroll;
   });
 
-  window.addEventListener('resize', () => {
-    fitAddon.fit();
-    syncPtySize();
+  return { term: termInstance, fitAddon: paneFitAddon, container: pane };
+}
+
+function setActiveSession(sessionId) {
+  if (!sessionId || !sessions.has(sessionId)) return;
+  const hostContainer = getTerminalContainer();
+  Array.from(hostContainer.children).forEach((child) => {
+    child.style.display = child.dataset.sessionId === sessionId ? "block" : "none";
+  });
+  activeSessionId = sessionId;
+  const session = sessions.get(sessionId);
+  if (session?.fitAddon) {
+    session.fitAddon.fit();
+    syncPtySize(session);
+  }
+  updateStatusBarForActiveSession();
+  updateSessionTabs();
+}
+
+function updateSessionTabs() {
+  const tabsContainer = document.getElementById("session-tabs");
+  const connectedSessions = Array.from(sessions.entries()).filter(([id, session]) => 
+    session.connectionState.type === "Connected"
+  );
+
+  if (connectedSessions.length <= 1) {
+    tabsContainer.classList.add("hidden");
+    return;
+  }
+
+  tabsContainer.classList.remove("hidden");
+  tabsContainer.innerHTML = "";
+
+  connectedSessions.forEach(([id, session]) => {
+    const isActive = activeSessionId === id;
+    const server = session.server;
+    const displayName = server?.nickname || `${server?.user}@${server?.host}` || "Unknown";
+    
+    const tab = document.createElement("button");
+    tab.className = `flex items-center gap-2 px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+      isActive 
+        ? "bg-blue-500 text-white" 
+        : "text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
+    }`;
+    tab.innerHTML = `
+      <div class="w-1.5 h-1.5 rounded-full bg-green-400"></div>
+      <span class="truncate max-w-32">${displayName}</span>
+    `;
+    tab.addEventListener("click", () => setActiveSession(id));
+    tabsContainer.appendChild(tab);
+  });
+  updateSessionCount();
+}
+
+function updateSessionCount() {
+  const countEl = document.getElementById("session-count");
+  if (!countEl) return;
+  const connectedCount = Array.from(sessions.values()).filter((s) => s.connectionState.type === "Connected").length;
+  countEl.textContent = `Sessions: ${connectedCount}`;
+}
+
+function loadMaxSessions() {
+  const saved = parseInt(localStorage.getItem("maxSessions") || "", 10);
+  if (!Number.isNaN(saved) && saved > 0 && saved <= 20) {
+    maxSessions = saved;
+  } else {
+    maxSessions = DEFAULT_MAX_SESSIONS;
+  }
+  const capLabel = document.getElementById("session-cap-label");
+  if (capLabel) {
+    capLabel.textContent = `Max ${maxSessions} sessions`;
+  }
+  updateSessionCount();
+}
+
+function ensureWelcomeSession() {
+  if (sessions.has(welcomeSessionId)) return;
+  const { term, fitAddon, container } = createTerminalPane(welcomeSessionId);
+  sessions.set(welcomeSessionId, {
+    id: welcomeSessionId,
+    server: null,
+    shellId: null,
+    term,
+    fitAddon,
+    container,
+    connectionState: { type: "Disconnected" },
+    autoScrollEnabled: true,
+  });
+  setActiveSession(welcomeSessionId);
+}
+
+function removeWelcomeSession() {
+  if (!sessions.has(welcomeSessionId)) return;
+  const session = sessions.get(welcomeSessionId);
+  if (session?.container?.parentElement) {
+    session.container.parentElement.removeChild(session.container);
+  }
+  sessions.delete(welcomeSessionId);
+  if (activeSessionId === welcomeSessionId) {
+    activeSessionId = null;
+  }
+}
+
+async function confirmDeleteServer() {
+  if (!pendingDeleteServerId) return;
+  const id = pendingDeleteServerId;
+  closeDeleteModal();
+  try {
+    await invoke("delete_server", { id });
+    loadServers();
+  } catch (error) {
+    console.error("Failed to delete server:", error);
+    alert("Failed to delete server: " + error);
+  }
+}
+
+function initTheme() {
+  const savedTheme = localStorage.getItem('theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const isDark = savedTheme ? savedTheme === 'dark' : prefersDark;
+  if (isDark) {
+    document.documentElement.classList.add('dark');
+  } else {
+    document.documentElement.classList.remove('dark');
+  }
+}
+
+function openHostKeyModal(prompt) {
+  pendingHostKey = prompt;
+  document.getElementById("host-key-host").textContent = `${prompt.host}:${prompt.port}`;
+  document.getElementById("host-key-type").textContent = prompt.key_type;
+  document.getElementById("host-key-fingerprint").textContent = prompt.fingerprint;
+  document.getElementById("host-key-modal").classList.remove("hidden");
+}
+
+function closeHostKeyModal() {
+  document.getElementById("host-key-modal").classList.add("hidden");
+}
+
+function toggleTheme() {
+  const isDark = document.documentElement.classList.toggle('dark');
+  localStorage.setItem('theme', isDark ? 'dark' : 'light');
+  sessions.forEach((session) => {
+    session.term?.setOption('theme', getTerminalTheme());
   });
 }
 
-function updateConnectionState(state, shellFromEvent) {
+function toggleTerminalBackground() {
+  terminalTransparent = !terminalTransparent;
+  document.body.classList.toggle('terminal-transparent', terminalTransparent);
+  const label = document.getElementById('terminal-bg-label');
+  if (label) {
+    label.textContent = terminalTransparent ? 'Glass' : 'Solid';
+  }
+  sessions.forEach((session) => {
+    session.term?.setOption('theme', getTerminalTheme());
+  });
+}
+
+function getTerminalTheme() {
+  const isDark = document.documentElement.classList.contains('dark');
+  return {
+    background: terminalTransparent ? 'transparent' : (isDark ? '#11111b' : '#f5f7ff'),
+    foreground: isDark ? '#cdd6f4' : '#4c4f69',
+    cursor: isDark ? '#f5c2e7' : '#dc8a78',
+    selection: isDark ? 'rgba(108, 112, 134, 0.5)' : 'rgba(188, 192, 204, 0.45)',
+  };
+}
+
+function initTerminal() {
+  const terminalEl = document.getElementById("terminal-container");
+  if (terminalEl) {
+    terminalEl.innerHTML = "";
+  }
+  ensureWelcomeSession();
+  window.addEventListener('resize', () => {
+    const active = getActiveSession();
+    if (active?.fitAddon) {
+      active.fitAddon.fit();
+      syncPtySize(active);
+    }
+  });
+}
+
+function updateConnectionState(session, state) {
   const normalizedState = normalizeConnectionState(state);
-  currentConnectionState = normalizedState;
+  session.connectionState = normalizedState;
+
   const statusEl = document.getElementById("connection-status");
   const disconnectBtn = document.getElementById("disconnect-btn");
-  const statusBarHost = document.getElementById("status-bar-host");
-  const statusBarState = document.getElementById("status-bar-state");
-  const connectedLabel = currentServer
-    ? `${currentServer.user}@${currentServer.host}:${currentServer.port}`
-    : "";
-  
   const statusIndicator = document.getElementById("status-indicator");
-  
+
+  const label = session.server
+    ? `${session.server.user}@${session.server.host}:${session.server.port}`
+    : "";
+
+  if (session.id === activeSessionId) {
+    switch (normalizedState.type) {
+      case "Connecting":
+        session.term.reset();
+        session.term.writeln("\x1b[1;33mConnecting to server...\x1b[0m");
+        statusEl.textContent = "Connecting...";
+        statusEl.className = "text-xs font-medium text-white bg-yellow-500 px-2.5 py-0.5 rounded-full";
+        statusIndicator.className = "w-2 h-2 rounded-full bg-yellow-500 animate-pulse";
+        disconnectBtn.classList.add("hidden");
+        break;
+      case "Connected":
+        session.term.reset();
+        session.term.writeln(`\x1b[1;32mConnected successfully to ${label}!\x1b[0m`);
+        statusEl.textContent = "Connected";
+        statusEl.className = "text-xs font-medium text-white bg-green-500 px-2.5 py-0.5 rounded-full";
+        statusIndicator.className = "w-2 h-2 rounded-full bg-green-500";
+        disconnectBtn.classList.remove("hidden");
+        break;
+      case "Disconnected":
+        session.term.reset();
+        session.term.writeln("Disconnected from server.");
+        statusEl.textContent = "Disconnected";
+        statusEl.className = "text-xs font-medium text-gray-600 bg-gray-200 dark:text-gray-400 dark:bg-gray-700 px-2.5 py-0.5 rounded-full";
+        statusIndicator.className = "w-2 h-2 rounded-full bg-gray-400";
+        disconnectBtn.classList.add("hidden");
+        break;
+      case "Error":
+        session.term.reset();
+        session.term.writeln(`\x1b[1;31mConnection error: ${normalizedState.error}\x1b[0m`);
+        statusEl.textContent = "Error";
+        statusEl.className = "text-xs font-medium text-white bg-red-500 px-2.5 py-0.5 rounded-full";
+        statusIndicator.className = "w-2 h-2 rounded-full bg-red-500";
+        disconnectBtn.classList.add("hidden");
+        showAlert(getErrorType(normalizedState.error), normalizedState.error);
+        break;
+    }
+    updateStatusBarForActiveSession();
+    updateSessionTabs();
+    session.fitAddon?.fit();
+  }
+
   switch (normalizedState.type) {
     case "Connecting":
-      term.reset();
-      term.writeln("\x1b[1;33mConnecting to server...\x1b[0m");
-      statusEl.textContent = "Connecting...";
-      statusEl.className = "text-xs font-medium text-white bg-yellow-500 px-2.5 py-0.5 rounded-full";
-      statusIndicator.className = "w-2 h-2 rounded-full bg-yellow-500 animate-pulse";
-      
-      disconnectBtn.classList.add("hidden");
-      if (currentServer) {
-        statusBarHost.textContent = connectedLabel;
-      }
-      statusBarState.textContent = "Connecting";
-      statusBarState.className = "font-medium text-xs uppercase tracking-wide text-yellow-600 dark:text-yellow-400";
-      fitAddon.fit();
-      logConnectionEvent("Connecting", connectedLabel, "info");
+      logConnectionEvent("Connecting", label, "info");
       break;
     case "Connected":
-      term.reset();
-      term.writeln(`\x1b[1;32mConnected successfully to ${connectedLabel}!\x1b[0m`);
-      statusEl.textContent = "Connected";
-      statusEl.className = "text-xs font-medium text-white bg-green-500 px-2.5 py-0.5 rounded-full";
-      statusIndicator.className = "w-2 h-2 rounded-full bg-green-500";
-
-      disconnectBtn.classList.remove("hidden");
-      if (currentServer) {
-        statusBarHost.textContent = connectedLabel;
-      }
-      statusBarState.textContent = "Connected";
-      statusBarState.className = "font-medium text-xs uppercase tracking-wide text-green-600 dark:text-green-400";
-      fitAddon.fit();
-      logConnectionEvent("Connected", connectedLabel, "success");
+      logConnectionEvent("Connected", label, "success");
       break;
     case "Disconnected":
-      term.reset();
-      term.writeln("Disconnected from server.");
-      statusEl.textContent = "Disconnected";
-      statusEl.className = "text-xs font-medium text-gray-600 bg-gray-200 dark:text-gray-400 dark:bg-gray-700 px-2.5 py-0.5 rounded-full";
-      statusIndicator.className = "w-2 h-2 rounded-full bg-gray-400";
-
-      disconnectBtn.classList.add("hidden");
-      statusBarHost.textContent = "Not connected";
-      statusBarState.textContent = "Disconnected";
-      statusBarState.className = "font-medium text-xs uppercase tracking-wide text-gray-600 dark:text-gray-400";
-      fitAddon.fit();
-      const shouldAlert = shellId && (!shellFromEvent || shellFromEvent === shellId);
-      if (shouldAlert) {
-        showAlert('Connection Lost', 'The SSH connection was unexpectedly disconnected.', 'warning');
-      }
-      if (!shellFromEvent || shellFromEvent === shellId) {
-        shellId = null;
-        currentServer = null;
-      }
-      logConnectionEvent("Disconnected", connectedLabel, "info");
+      logConnectionEvent("Disconnected", label, "info");
       break;
     case "Error":
-      term.reset();
-      term.writeln(`\x1b[1;31mConnection error: ${normalizedState.error}\x1b[0m`);
-      statusEl.textContent = "Error";
-      statusEl.className = "text-xs font-medium text-white bg-red-500 px-2.5 py-0.5 rounded-full";
-      statusIndicator.className = "w-2 h-2 rounded-full bg-red-500";
-
-      disconnectBtn.classList.add("hidden");
-      if (currentServer) {
-        statusBarHost.textContent = `${currentServer.user}@${currentServer.host}:${currentServer.port}`;
-      }
-      statusBarState.textContent = "Error";
-      statusBarState.className = "font-medium text-xs uppercase tracking-wide text-red-600 dark:text-red-400";
-      fitAddon.fit();
-      showAlert(getErrorType(normalizedState.error), normalizedState.error);
-      logConnectionEvent(`Error: ${normalizedState.error}`, connectedLabel, "error");
+      logConnectionEvent(`Error: ${normalizedState.error}`, label, "error");
       break;
   }
 }
@@ -330,11 +532,11 @@ async function loadServers() {
   }
 }
 
-function syncPtySize() {
-  if (!shellId || !term) return;
-  const width = term.cols;
-  const height = term.rows;
-  invoke("resize", { shellId, width, height }).catch(console.error);
+function syncPtySize(session) {
+  if (!session || !session.shellId || !session.term) return;
+  const width = session.term.cols;
+  const height = session.term.rows;
+  invoke("resize", { shellId: session.shellId, width, height }).catch(console.error);
 }
 function renderServerList() {
   const listEl = document.getElementById("server-list");
@@ -363,8 +565,16 @@ function renderServerList() {
   }
 
   filteredServers.forEach((server) => {
+    const session = sessions.get(server.id);
+    const connectionState = session?.connectionState || { type: "Disconnected" };
+    const isActive = activeSessionId === server.id;
+    const isConnected = connectionState.type === "Connected";
+    const isConnecting = connectionState.type === "Connecting";
+    const isErrored = connectionState.type === "Error";
+    const isDisconnected = connectionState.type === "Disconnected";
+    
     const div = document.createElement("div");
-    div.className = "server-item bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3 shadow-sm hover:shadow-md transition-all group";
+    div.className = `server-item bg-white dark:bg-gray-800 border ${isActive ? 'border-blue-500 border-l-4' : 'border-gray-200 dark:border-gray-700'} rounded-lg p-3 shadow-sm hover:shadow-md transition-all group`;
     
     // Determine auth type label
     let authLabel = "Key";
@@ -375,18 +585,57 @@ function renderServerList() {
     const displayName = server.nickname && server.nickname.trim().length > 0 ? server.nickname : `${server.user}@${server.host}`;
     const subtitle = server.nickname && server.nickname.trim().length > 0 ? `${server.user}@${server.host}` : `Port ${server.port}`;
 
+    // Connection status dot
+    let statusDot = "";
+    let statusText = "";
+    switch (connectionState.type) {
+      case "Connecting":
+        statusDot = '<div class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></div>';
+        statusText = "Connecting";
+        break;
+      case "Connected":
+        statusDot = '<div class="w-2 h-2 rounded-full bg-green-500"></div>';
+        statusText = isActive ? "Active" : "Connected";
+        break;
+      case "Error":
+        statusDot = '<div class="w-2 h-2 rounded-full bg-red-500"></div>';
+        statusText = "Error";
+        break;
+      default:
+        statusDot = '<div class="w-2 h-2 rounded-full bg-gray-400"></div>';
+        statusText = "Disconnected";
+    }
+
+    let buttonLabel = "Connect";
+    let buttonClass = "bg-green-500 hover:bg-green-600";
+    let buttonIcon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>';
+    if (isConnected) {
+      buttonLabel = isActive ? "Active" : "Switch";
+      buttonClass = "bg-blue-500 hover:bg-blue-600";
+      buttonIcon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>';
+    } else if (isErrored || isDisconnected) {
+      buttonLabel = "Reconnect";
+      buttonClass = "bg-amber-500 hover:bg-amber-600";
+    } else if (isConnecting) {
+      buttonLabel = "Connecting";
+      buttonClass = "bg-yellow-500 hover:bg-yellow-600";
+    }
+
     div.innerHTML = `
       <div class="flex justify-between items-start mb-2">
         <div class="font-medium text-gray-900 dark:text-gray-100 truncate pr-2 flex flex-col" title="${displayName}">
-            <span class="text-blue-600 dark:text-blue-400 font-bold">${displayName}</span>
+            <div class="flex items-center gap-2">
+                ${statusDot}
+                <span class="text-blue-600 dark:text-blue-400 font-bold">${displayName}</span>
+            </div>
             <span class="text-xs text-gray-500 dark:text-gray-400">${subtitle}</span>
         </div>
-        <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button class="edit-btn p-1.5 rounded text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" data-id="${server.id}" title="Edit">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+        <div class="server-actions flex gap-1" style="z-index: 5;">
+            <button class="server-action-btn edit-btn" data-id="${server.id}" title="Edit">
+                <svg class="server-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
             </button>
-            <button class="delete-btn p-1.5 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors" data-id="${server.id}" title="Delete">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+            <button class="server-action-btn delete delete-btn" data-id="${server.id}" title="Delete">
+                <svg class="server-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
             </button>
         </div>
       </div>
@@ -398,43 +647,95 @@ function renderServerList() {
                 ${authLabel}
             </span>
         </div>
-        <button class="connect-btn bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded shadow-sm hover:shadow transition-all font-medium flex items-center gap-1" data-id="${server.id}">
-            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-            Connect
+        <button class="connect-btn ${buttonClass} text-white px-3 py-1 rounded shadow-sm hover:shadow transition-all font-medium flex items-center gap-1" data-id="${server.id}">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">${buttonIcon}</svg>
+            ${buttonLabel}
         </button>
       </div>
     `;
+    const actions = div.querySelector(".server-actions");
+    if (actions) {
+      div.addEventListener("mouseenter", () => {
+        actions.style.opacity = "1";
+        actions.style.visibility = "visible";
+        actions.style.pointerEvents = "auto";
+      });
+      div.addEventListener("mouseleave", () => {
+        actions.style.opacity = "0";
+        actions.style.visibility = "hidden";
+        actions.style.pointerEvents = "none";
+      });
+    }
     listEl.appendChild(div);
   });
+  updateSessionTabs();
 }
 
 async function connectToServer(id) {
   const server = servers.find((s) => s.id === id);
   if (!server) return;
 
-  currentServer = server;
-  term.reset();
-  term.writeln("\x1b[1;33mConnecting...\x1b[0m");
+  const existingSession = sessions.get(id);
+  const activeSessionsCount = Array.from(sessions.values()).filter((s) =>
+    s.connectionState.type === "Connected" || s.connectionState.type === "Connecting"
+  ).length;
+
+  const isExistingActive =
+    existingSession && (existingSession.connectionState.type === "Connected" || existingSession.connectionState.type === "Connecting");
+
+  if (!isExistingActive && activeSessionsCount >= maxSessions) {
+    showAlert(
+      "Session Limit Reached",
+      `You can have up to ${maxSessions} active sessions. Disconnect one to open another.`,
+      "warning"
+    );
+    return;
+  }
+
+  removeWelcomeSession();
+  const session = existingSession || ensureSession(server);
+  if (session.connectionState.type === "Connected" && session.shellId) {
+    setActiveSession(session.id);
+    return;
+  }
+  setActiveSession(session.id);
+  updateConnectionState(session, "Connecting");
 
   try {
-    shellId = await invoke("connect", { server });
-    syncPtySize();
+    const newShellId = await invoke("connect", { server });
+    session.shellId = newShellId;
+    syncPtySize(session);
+    updateConnectionState(session, "Connected");
     logConnectionEvent("Shell opened", `${server.user}@${server.host}:${server.port}`, "success");
   } catch (error) {
     console.error("Failed to connect:", error);
-    term.reset();
-    term.writeln(`\x1b[1;31mConnection failed: ${error}\x1b[0m`);
-    showAlert(getErrorType(error), error);
+    updateConnectionState(session, { type: "Error", error: String(error) });
+    showAlert(getErrorType(String(error)), String(error));
   }
 }
 
 async function disconnectFromServer() {
-  if (!currentServer) return;
+  const session = getActiveSession();
+  if (!session || !session.server) return;
 
   try {
-    await invoke("disconnect", { serverId: currentServer.id });
-    shellId = null;
-    currentServer = null;
+    await invoke("disconnect", { serverId: session.server.id });
+    
+    // Clean up session
+    if (session.container?.parentElement) {
+      session.container.parentElement.removeChild(session.container);
+    }
+    sessions.delete(session.server.id);
+    
+    // Switch to another session or show welcome
+    const remainingSessions = Array.from(sessions.values()).filter(s => s.connectionState.type === "Connected");
+    if (remainingSessions.length > 0) {
+      setActiveSession(remainingSessions[0].id);
+    } else {
+      ensureWelcomeSession();
+      setActiveSession(welcomeSessionId);
+    }
+    
     logConnectionEvent("Disconnect requested", "", "info");
   } catch (error) {
     console.error("Failed to disconnect:", error);
@@ -610,7 +911,22 @@ async function saveServer(e) {
 }
 
 async function deleteServer(id) {
-  if (!confirm("Are you sure you want to delete this server?")) return;
+  const modal = document.getElementById("delete-confirm-modal");
+  const message = document.getElementById("delete-confirm-message");
+  if (message) {
+    const server = servers.find((item) => item.id === id);
+    const label = server
+      ? server.nickname && server.nickname.trim().length > 0
+        ? server.nickname
+        : `${server.user}@${server.host}`
+      : "this host";
+    message.textContent = `Delete ${label}? This action cannot be undone.`;
+  }
+  pendingDeleteServerId = id;
+  if (modal) {
+    modal.classList.remove("hidden");
+  }
+  return;
 
   try {
     await invoke("delete_server", { id });
@@ -669,14 +985,15 @@ function renderSnippetList() {
 }
 
 async function executeSnippet(snippet) {
-  if (!term || !shellId) {
+  const session = getActiveSession();
+  if (!session || !session.shellId || !session.term) {
     alert("Please connect to a server before running a snippet.");
     return;
   }
 
-  term.writeln(`\r\n\x1b[1;33mRunning snippet: ${snippet.name}\x1b[0m\r\n`);
+  session.term.writeln(`\r\n\x1b[1;33mRunning snippet: ${snippet.name}\x1b[0m\r\n`);
   try {
-    await invoke("send_input", { shellId, input: snippet.command + "\n" });
+    await invoke("send_input", { shellId: session.shellId, input: snippet.command + "\n" });
   } catch (error) {
     console.error("Failed to run snippet:", error);
     showAlert("Snippet Error", `${snippet.name} failed: ${error}`);
@@ -692,6 +1009,14 @@ function openSnippetModal() {
 
 function closeSnippetModal() {
   document.getElementById("snippet-modal").classList.add("hidden");
+}
+
+function closeDeleteModal() {
+  const modal = document.getElementById("delete-confirm-modal");
+  if (modal) {
+    modal.classList.add("hidden");
+  }
+  pendingDeleteServerId = null;
 }
 
 function openSnippetEditModal(id) {
@@ -776,14 +1101,28 @@ function initTabs() {
 function toggleFocusMode() {
     document.body.classList.toggle('focus-mode-active');
     setTimeout(() => {
-        fitAddon.fit();
-        syncPtySize();
+        const active = getActiveSession();
+        if (active?.fitAddon) {
+          active.fitAddon.fit();
+          syncPtySize(active);
+        }
     }, 300);
+}
+
+function disableInputCorrections() {
+  const fields = document.querySelectorAll("input, textarea");
+  fields.forEach((field) => {
+    field.setAttribute("autocorrect", "off");
+    field.setAttribute("autocapitalize", "off");
+    field.setAttribute("spellcheck", "false");
+  });
 }
 
 window.addEventListener("DOMContentLoaded", () => {
   initTheme();
+  loadMaxSessions();
   initTabs(); // Initialize tabs
+  disableInputCorrections();
   
   document.getElementById("theme-toggle").addEventListener("click", toggleTheme);
   
@@ -801,6 +1140,24 @@ window.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  const maxSessionsInput = document.getElementById("max-sessions-input");
+  if (maxSessionsInput) {
+    maxSessionsInput.value = String(maxSessions);
+    maxSessionsInput.addEventListener("change", (event) => {
+      const value = parseInt(event.target.value, 10);
+      if (!Number.isNaN(value) && value > 0 && value <= 20) {
+        maxSessions = value;
+        localStorage.setItem("maxSessions", String(value));
+        const capLabel = document.getElementById("session-cap-label");
+        if (capLabel) {
+          capLabel.textContent = `Max ${maxSessions} sessions`;
+        }
+      } else {
+        event.target.value = String(maxSessions);
+      }
+    });
+  }
+
   // Clear log
   document.getElementById("clear-log-btn").addEventListener("click", () => {
       connectionLog = [];
@@ -815,22 +1172,43 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("cancel-btn").addEventListener("click", closeModal);
   document.getElementById("server-form").addEventListener("submit", saveServer);
   document.getElementById("disconnect-btn").addEventListener("click", disconnectFromServer);
+  document.getElementById("delete-cancel-btn").addEventListener("click", closeDeleteModal);
+  document.getElementById("delete-confirm-btn").addEventListener("click", confirmDeleteServer);
+  const deleteModal = document.getElementById("delete-confirm-modal");
+  if (deleteModal) {
+    deleteModal.addEventListener("click", (event) => {
+      if (event.target === deleteModal) {
+        closeDeleteModal();
+      }
+    });
+  }
   document.getElementById("server-list").addEventListener("click", (e) => {
     const target = e.target;
     const button = target.closest("button");
-    const item = target.closest(".server-item"); // Changed from li to .server-item
+    const item = target.closest(".server-item");
     
-    // Handle card click (connect) unless clicking a specific button
+    // Handle card click for session switching
     if (item && !button) {
-       // Optional: make clicking the card connect? Maybe too aggressive.
-       // Let's stick to buttons for now, or make double click connect.
+       const id = item.querySelector(".connect-btn")?.dataset.id;
+       if (id) {
+         const session = sessions.get(id);
+         if (session && session.connectionState.type === "Connected") {
+           setActiveSession(id);
+           return;
+         }
+       }
     }
 
     if (!button) return;
     const id = button.dataset.id;
     if (!id) return;
     if (button.classList.contains("connect-btn")) {
-      connectToServer(id);
+      const session = sessions.get(id);
+      if (session && session.connectionState.type === "Connected") {
+        setActiveSession(id);
+      } else {
+        connectToServer(id);
+      }
       return;
     }
     if (button.classList.contains("edit-btn")) {
@@ -881,15 +1259,52 @@ window.addEventListener("DOMContentLoaded", () => {
       document.getElementById("key-field").classList.remove("hidden");
     }
   });
+  
+  // Keyboard shortcuts
+  document.addEventListener("keydown", (e) => {
+    if (e.metaKey || e.ctrlKey) {
+      // Cmd/Ctrl + 1-9 for session switching
+      if (e.key >= "1" && e.key <= "9") {
+        e.preventDefault();
+        const sessionIndex = parseInt(e.key) - 1;
+        const connectedSessions = Array.from(sessions.entries()).filter(([id, session]) => 
+          session.connectionState.type === "Connected"
+        );
+        if (connectedSessions[sessionIndex]) {
+          setActiveSession(connectedSessions[sessionIndex][0]);
+        }
+      }
+      // Cmd/Ctrl + W to close active session
+      else if (e.key === "w") {
+        e.preventDefault();
+        const activeSession = getActiveSession();
+        if (activeSession && activeSession.server) {
+          disconnectFromServer();
+        }
+      }
+    }
+  });
+  
   loadServers();
   loadSnippets();
 
   listen("connection-state", (event) => {
-    const { state, shellId: eventShellId } = normalizeConnectionEvent(event.payload);
-    if (eventShellId && (!shellId || shellId === eventShellId)) {
-      shellId = eventShellId;
+    const { state, shellId: eventShellId, serverId: eventServerId } = normalizeConnectionEvent(event.payload);
+
+    let session = getSessionByServerId(eventServerId) || getSessionByShellId(eventShellId);
+    if (!session) {
+      const server = servers.find((s) => s.id === eventServerId);
+      if (server) {
+        session = ensureSession(server);
+      }
     }
-    updateConnectionState(state, eventShellId);
+    if (!session) return;
+
+    if (eventShellId) {
+      session.shellId = eventShellId;
+    }
+
+    updateConnectionState(session, state);
   });
 
   listen("host-key-prompt", (event) => {
@@ -905,20 +1320,15 @@ window.addEventListener("DOMContentLoaded", () => {
   });
 
   listen("terminal-output", (event) => {
-    if (!term) return;
     const payload = typeof event.payload === 'string'
-      ? { shell_id: shellId, output: event.payload }
+      ? { shell_id: null, output: event.payload }
       : event.payload;
 
-    if (payload.shell_id && shellId && payload.shell_id !== shellId) {
-      return;
-    }
+    const targetShellId = payload.shell_id || payload.shellId || null;
+    const session = getSessionByShellId(targetShellId) || getActiveSession();
+    if (!session) return;
 
-    const output = payload.output || "";
-    term.write(output);
-    if (autoScrollEnabled) {
-      term.scrollToBottom();
-    }
+    writeToSessionTerminal(session, payload.output || "");
   });
 
   document.getElementById("host-key-trust").addEventListener("click", async () => {
