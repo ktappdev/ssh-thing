@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Test Modal</title>
+  <style>
+    .hidden { display: none; }
+    .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; }
+    .modal-content { background: white; padding: 20px; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <button id="add-server-btn">Add Server</button>
+  <div id="server-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Add Server</h3>
+      <button id="close-btn">Close</button>
+    </div>
+  </div>
+  <script>
+    console.log('Script loaded');
+    document.getElementById('add-server-btn').addEventListener('click', () => {
+      console.log('Button clicked');
+      document.getElementById('server-modal').classList.remove('hidden');
+    });
+    document.getElementById('close-btn').addEventListener('click', () => {
+      document.getElementById('server-modal').classList.add('hidden');
+    });
+  </script>
+</body>
+</html>

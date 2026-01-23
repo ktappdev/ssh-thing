@@ -12,6 +12,8 @@ let autoScrollEnabled = true;
 let connectionLog = [];
 let pendingHostKey = null;
 let localEchoEnabled = false;
+let terminalTransparent = false;
+let serverFilterTerm = "";
 
 function initTheme() {
   const savedTheme = localStorage.getItem('theme');
@@ -40,17 +42,39 @@ function closeHostKeyModal() {
 function toggleTheme() {
   const isDark = document.documentElement.classList.toggle('dark');
   localStorage.setItem('theme', isDark ? 'dark' : 'light');
+  if (term) {
+    term.setOption('theme', getTerminalTheme());
+  }
+}
+
+function toggleTerminalBackground() {
+  terminalTransparent = !terminalTransparent;
+  document.body.classList.toggle('terminal-transparent', terminalTransparent);
+  const label = document.getElementById('terminal-bg-label');
+  if (label) {
+    label.textContent = terminalTransparent ? 'Glass' : 'Solid';
+  }
+  if (term) {
+    term.setOption('theme', getTerminalTheme());
+  }
+}
+
+function getTerminalTheme() {
+  const isDark = document.documentElement.classList.contains('dark');
+  return {
+    background: terminalTransparent ? 'transparent' : (isDark ? '#11111b' : '#f5f7ff'),
+    foreground: isDark ? '#cdd6f4' : '#4c4f69',
+    cursor: isDark ? '#f5c2e7' : '#dc8a78',
+    selection: isDark ? 'rgba(108, 112, 134, 0.5)' : 'rgba(188, 192, 204, 0.45)',
+  };
 }
 
 function initTerminal() {
   term = new Terminal({
     cursorBlink: true,
-    fontFamily: 'monospace',
+    fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
     fontSize: 14,
-    theme: {
-      background: '#000000',
-      foreground: '#00ff00',
-    },
+    theme: getTerminalTheme(),
   });
 
   fitAddon = new FitAddon.FitAddon();
@@ -135,18 +159,22 @@ function updateConnectionState(state, shellFromEvent) {
     ? `${currentServer.user}@${currentServer.host}:${currentServer.port}`
     : "";
   
+  const statusIndicator = document.getElementById("status-indicator");
+  
   switch (normalizedState.type) {
     case "Connecting":
       term.reset();
       term.writeln("\x1b[1;33mConnecting to server...\x1b[0m");
       statusEl.textContent = "Connecting...";
-      statusEl.className = "text-sm text-yellow-600 dark:text-yellow-400";
+      statusEl.className = "text-xs font-medium text-white bg-yellow-500 px-2.5 py-0.5 rounded-full";
+      statusIndicator.className = "w-2 h-2 rounded-full bg-yellow-500 animate-pulse";
+      
       disconnectBtn.classList.add("hidden");
       if (currentServer) {
         statusBarHost.textContent = connectedLabel;
       }
       statusBarState.textContent = "Connecting";
-      statusBarState.className = "font-medium text-yellow-600 dark:text-yellow-400";
+      statusBarState.className = "font-medium text-xs uppercase tracking-wide text-yellow-600 dark:text-yellow-400";
       fitAddon.fit();
       logConnectionEvent("Connecting", connectedLabel, "info");
       break;
@@ -154,13 +182,15 @@ function updateConnectionState(state, shellFromEvent) {
       term.reset();
       term.writeln(`\x1b[1;32mConnected successfully to ${connectedLabel}!\x1b[0m`);
       statusEl.textContent = "Connected";
-      statusEl.className = "text-sm text-green-600 dark:text-green-400";
+      statusEl.className = "text-xs font-medium text-white bg-green-500 px-2.5 py-0.5 rounded-full";
+      statusIndicator.className = "w-2 h-2 rounded-full bg-green-500";
+
       disconnectBtn.classList.remove("hidden");
       if (currentServer) {
         statusBarHost.textContent = connectedLabel;
       }
       statusBarState.textContent = "Connected";
-      statusBarState.className = "font-medium text-green-600 dark:text-green-400";
+      statusBarState.className = "font-medium text-xs uppercase tracking-wide text-green-600 dark:text-green-400";
       fitAddon.fit();
       logConnectionEvent("Connected", connectedLabel, "success");
       break;
@@ -168,11 +198,13 @@ function updateConnectionState(state, shellFromEvent) {
       term.reset();
       term.writeln("Disconnected from server.");
       statusEl.textContent = "Disconnected";
-      statusEl.className = "text-sm text-gray-600 dark:text-gray-400";
+      statusEl.className = "text-xs font-medium text-gray-600 bg-gray-200 dark:text-gray-400 dark:bg-gray-700 px-2.5 py-0.5 rounded-full";
+      statusIndicator.className = "w-2 h-2 rounded-full bg-gray-400";
+
       disconnectBtn.classList.add("hidden");
       statusBarHost.textContent = "Not connected";
       statusBarState.textContent = "Disconnected";
-      statusBarState.className = "font-medium text-gray-600 dark:text-gray-400";
+      statusBarState.className = "font-medium text-xs uppercase tracking-wide text-gray-600 dark:text-gray-400";
       fitAddon.fit();
       const shouldAlert = shellId && (!shellFromEvent || shellFromEvent === shellId);
       if (shouldAlert) {
@@ -187,14 +219,16 @@ function updateConnectionState(state, shellFromEvent) {
     case "Error":
       term.reset();
       term.writeln(`\x1b[1;31mConnection error: ${normalizedState.error}\x1b[0m`);
-      statusEl.textContent = "Error: " + normalizedState.error;
-      statusEl.className = "text-sm text-red-600 dark:text-red-400";
+      statusEl.textContent = "Error";
+      statusEl.className = "text-xs font-medium text-white bg-red-500 px-2.5 py-0.5 rounded-full";
+      statusIndicator.className = "w-2 h-2 rounded-full bg-red-500";
+
       disconnectBtn.classList.add("hidden");
       if (currentServer) {
         statusBarHost.textContent = `${currentServer.user}@${currentServer.host}:${currentServer.port}`;
       }
       statusBarState.textContent = "Error";
-      statusBarState.className = "font-medium text-red-600 dark:text-red-400";
+      statusBarState.className = "font-medium text-xs uppercase tracking-wide text-red-600 dark:text-red-400";
       fitAddon.fit();
       showAlert(getErrorType(normalizedState.error), normalizedState.error);
       logConnectionEvent(`Error: ${normalizedState.error}`, connectedLabel, "error");
@@ -305,18 +339,72 @@ function syncPtySize() {
 function renderServerList() {
   const listEl = document.getElementById("server-list");
   listEl.innerHTML = "";
-  servers.forEach((server) => {
-    const li = document.createElement("li");
-    li.className = "flex justify-between items-center bg-gray-50 dark:bg-gray-700 p-2 rounded";
-    li.innerHTML = `
-      <span>${server.user}@${server.host}:${server.port}</span>
-      <div class="flex gap-1">
-        <button class="connect-btn text-green-500 hover:text-green-700 text-sm" data-id="${server.id}">Connect</button>
-        <button class="edit-btn text-blue-500 hover:text-blue-700 text-sm" data-id="${server.id}">Edit</button>
-        <button class="delete-btn text-red-500 hover:text-red-700 text-sm" data-id="${server.id}">Delete</button>
+  const filterWrap = document.getElementById("server-filter-wrap");
+  const normalizedTerm = serverFilterTerm.trim().toLowerCase();
+  const filteredServers = servers.filter((server) => {
+    if (!normalizedTerm) return true;
+    const nickname = server.nickname || "";
+    const haystack = `${nickname} ${server.user} ${server.host}`.toLowerCase();
+    return haystack.includes(normalizedTerm);
+  });
+
+  if (filterWrap) {
+    filterWrap.classList.toggle("hidden", servers.length < 6);
+  }
+
+  if (servers.length === 0) {
+    listEl.innerHTML = `<div class="text-center text-gray-500 dark:text-gray-400 mt-10 text-sm">No servers added yet.<br>Click "Add" to get started.</div>`;
+    return;
+  }
+
+  if (filteredServers.length === 0) {
+    listEl.innerHTML = `<div class="text-center text-gray-500 dark:text-gray-400 mt-10 text-sm">No matches for "${serverFilterTerm}".</div>`;
+    return;
+  }
+
+  filteredServers.forEach((server) => {
+    const div = document.createElement("div");
+    div.className = "server-item bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3 shadow-sm hover:shadow-md transition-all group";
+    
+    // Determine auth type label
+    let authLabel = "Key";
+    if (server.auth.type === 'Password' || (server.auth.type === 'SecretRef' && server.auth.kind === 'Password')) {
+        authLabel = "Password";
+    }
+
+    const displayName = server.nickname && server.nickname.trim().length > 0 ? server.nickname : `${server.user}@${server.host}`;
+    const subtitle = server.nickname && server.nickname.trim().length > 0 ? `${server.user}@${server.host}` : `Port ${server.port}`;
+
+    div.innerHTML = `
+      <div class="flex justify-between items-start mb-2">
+        <div class="font-medium text-gray-900 dark:text-gray-100 truncate pr-2 flex flex-col" title="${displayName}">
+            <span class="text-blue-600 dark:text-blue-400 font-bold">${displayName}</span>
+            <span class="text-xs text-gray-500 dark:text-gray-400">${subtitle}</span>
+        </div>
+        <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button class="edit-btn p-1.5 rounded text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" data-id="${server.id}" title="Edit">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+            </button>
+            <button class="delete-btn p-1.5 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors" data-id="${server.id}" title="Delete">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+            </button>
+        </div>
+      </div>
+      <div class="flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
+        <div class="flex items-center gap-2">
+            <span class="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-[10px] font-mono border border-gray-200 dark:border-gray-600">:${server.port}</span>
+            <span class="flex items-center gap-1">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                ${authLabel}
+            </span>
+        </div>
+        <button class="connect-btn bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded shadow-sm hover:shadow transition-all font-medium flex items-center gap-1" data-id="${server.id}">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            Connect
+        </button>
       </div>
     `;
-    listEl.appendChild(li);
+    listEl.appendChild(div);
   });
 }
 
@@ -376,10 +464,15 @@ function logConnectionEvent(message, detail = "", type = "info") {
 }
 
 function openModal() {
-  document.getElementById("server-modal").classList.remove("hidden");
+  const modal = document.getElementById("server-modal");
+  modal.classList.remove("hidden");
   document.getElementById("modal-title").textContent = "Add Server";
   document.getElementById("server-form").reset();
   document.getElementById("server-id").value = "";
+  const nicknameInput = document.getElementById("server-nickname");
+  if (nicknameInput) {
+    nicknameInput.value = "";
+  }
   document.getElementById("server-password").placeholder = "";
   document.getElementById("server-key").placeholder = "";
 }
@@ -395,6 +488,10 @@ function openEditModal(id) {
   document.getElementById("server-modal").classList.remove("hidden");
   document.getElementById("modal-title").textContent = "Edit Server";
   document.getElementById("server-id").value = server.id;
+  const nicknameInput = document.getElementById("server-nickname");
+  if (nicknameInput) {
+    nicknameInput.value = server.nickname || "";
+  }
   document.getElementById("server-host").value = server.host;
   document.getElementById("server-port").value = server.port;
   document.getElementById("server-user").value = server.user;
@@ -433,6 +530,8 @@ async function saveServer(e) {
   e.preventDefault();
 
   const id = document.getElementById("server-id").value || crypto.randomUUID();
+  const nicknameInput = document.getElementById("server-nickname");
+  const nickname = nicknameInput ? nicknameInput.value.trim() : "";
   const host = document.getElementById("server-host").value;
   const port = parseInt(document.getElementById("server-port").value);
   const user = document.getElementById("server-user").value;
@@ -489,6 +588,7 @@ async function saveServer(e) {
 
   const server = {
     id,
+    nickname: nickname.length > 0 ? nickname : null,
     host,
     port,
     user,
@@ -535,22 +635,36 @@ async function loadSnippets() {
 function renderSnippetList() {
   const listEl = document.getElementById("snippet-list");
   listEl.innerHTML = "";
+  
+  if (snippets.length === 0) {
+    listEl.innerHTML = `<div class="text-center text-gray-500 dark:text-gray-400 mt-10 text-sm">No snippets added yet.</div>`;
+    return;
+  }
+
   snippets.forEach((snippet) => {
-    const li = document.createElement("li");
-    li.className = "flex flex-col bg-gray-50 dark:bg-gray-700 p-2 rounded cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600";
-    li.innerHTML = `
-      <div class="flex justify-between items-center">
-        <span class="font-medium truncate flex-1">${snippet.name}</span>
-        <div class="flex gap-1">
-          <button class="snippet-run-btn text-green-500 hover:text-green-700 text-sm" data-id="${snippet.id}">Run</button>
-          <button class="snippet-edit-btn text-blue-500 hover:text-blue-700 text-sm" data-id="${snippet.id}">Edit</button>
-          <button class="snippet-delete-btn text-red-500 hover:text-red-700 text-sm" data-id="${snippet.id}">Delete</button>
+    const div = document.createElement("div");
+    div.className = "snippet-item bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3 shadow-sm hover:shadow-md transition-all group cursor-pointer";
+    div.innerHTML = `
+      <div class="flex justify-between items-center mb-1">
+        <span class="font-medium text-gray-800 dark:text-gray-200 truncate flex-1">${snippet.name}</span>
+        <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button class="snippet-edit-btn p-1 rounded text-gray-400 hover:text-blue-500 transition-colors" data-id="${snippet.id}">
+             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+          </button>
+          <button class="snippet-delete-btn p-1 rounded text-gray-400 hover:text-red-500 transition-colors" data-id="${snippet.id}">
+             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+          </button>
         </div>
       </div>
-      ${snippet.description ? `<p class="text-xs text-gray-500 dark:text-gray-400 truncate">${snippet.description}</p>` : ''}
+      <div class="text-xs font-mono bg-gray-50 dark:bg-gray-900 p-1.5 rounded text-gray-600 dark:text-gray-400 truncate mb-2">
+        ${snippet.command}
+      </div>
+      <div class="flex justify-between items-end">
+        <p class="text-xs text-gray-500 dark:text-gray-500 truncate max-w-[70%]">${snippet.description || ''}</p>
+        <button class="snippet-run-btn bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 px-2 py-1 rounded text-xs font-medium transition-colors" data-id="${snippet.id}">Run</button>
+      </div>
     `;
-    listEl.appendChild(li);
-
+    listEl.appendChild(div);
   });
 }
 
@@ -633,17 +747,85 @@ async function deleteSnippet(id) {
   }
 }
 
+function initTabs() {
+    const tabServers = document.getElementById('tab-servers');
+    const tabSnippets = document.getElementById('tab-snippets');
+    const viewServers = document.getElementById('view-servers');
+    const viewSnippets = document.getElementById('view-snippets');
+
+    if (!tabServers || !tabSnippets) return;
+
+    function setActiveTab(tab) {
+        if (tab === 'servers') {
+            tabServers.className = 'flex-1 py-3 text-sm font-medium border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 bg-gray-50 dark:bg-gray-700/50';
+            tabSnippets.className = 'flex-1 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200';
+            viewServers.classList.remove('hidden');
+            viewSnippets.classList.add('hidden');
+        } else {
+            tabSnippets.className = 'flex-1 py-3 text-sm font-medium border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 bg-gray-50 dark:bg-gray-700/50';
+            tabServers.className = 'flex-1 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200';
+            viewSnippets.classList.remove('hidden');
+            viewServers.classList.add('hidden');
+        }
+    }
+
+    tabServers.addEventListener('click', () => setActiveTab('servers'));
+    tabSnippets.addEventListener('click', () => setActiveTab('snippets'));
+}
+
+function toggleFocusMode() {
+    document.body.classList.toggle('focus-mode-active');
+    setTimeout(() => {
+        fitAddon.fit();
+        syncPtySize();
+    }, 300);
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   initTheme();
+  initTabs(); // Initialize tabs
+  
   document.getElementById("theme-toggle").addEventListener("click", toggleTheme);
+  
+  // Focus mode
+  document.getElementById("focus-btn").addEventListener("click", toggleFocusMode);
+  document.getElementById("exit-focus-btn").addEventListener("click", toggleFocusMode);
+  document.getElementById("focus-toggle-btn").addEventListener("click", toggleFocusMode);
+  document.getElementById("terminal-bg-toggle").addEventListener("click", toggleTerminalBackground);
+
+  const serverFilterInput = document.getElementById("server-filter");
+  if (serverFilterInput) {
+    serverFilterInput.addEventListener("input", (event) => {
+      serverFilterTerm = event.target.value || "";
+      renderServerList();
+    });
+  }
+
+  // Clear log
+  document.getElementById("clear-log-btn").addEventListener("click", () => {
+      connectionLog = [];
+      const listEl = document.getElementById("connection-log-list");
+      if (listEl) listEl.innerHTML = "";
+  });
+
   initTerminal();
+  
   document.getElementById("add-server-btn").addEventListener("click", openModal);
+  
   document.getElementById("cancel-btn").addEventListener("click", closeModal);
   document.getElementById("server-form").addEventListener("submit", saveServer);
   document.getElementById("disconnect-btn").addEventListener("click", disconnectFromServer);
   document.getElementById("server-list").addEventListener("click", (e) => {
     const target = e.target;
     const button = target.closest("button");
+    const item = target.closest(".server-item"); // Changed from li to .server-item
+    
+    // Handle card click (connect) unless clicking a specific button
+    if (item && !button) {
+       // Optional: make clicking the card connect? Maybe too aggressive.
+       // Let's stick to buttons for now, or make double click connect.
+    }
+
     if (!button) return;
     const id = button.dataset.id;
     if (!id) return;
@@ -683,9 +865,9 @@ window.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    const item = target.closest("li");
+    const item = target.closest(".snippet-item"); // Changed from li to .snippet-item
     if (!item) return;
-    const id = item.querySelector("button")?.dataset.id;
+    const id = item.querySelector(".snippet-run-btn")?.dataset.id; // Look for run button data id
     if (!id) return;
     const snippet = snippets.find((s) => s.id === id);
     if (snippet) executeSnippet(snippet);

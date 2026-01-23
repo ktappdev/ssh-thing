@@ -267,6 +267,8 @@ impl Handler for SshClientHandler {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerConnection {
     pub id: String,
+    #[serde(default)]
+    pub nickname: Option<String>,
     pub host: String,
     pub port: u16,
     pub user: String,

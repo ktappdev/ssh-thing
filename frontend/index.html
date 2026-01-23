@@ -4,33 +4,47 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SSH Terminal</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="./vendor/tailwind.min.css" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
     <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
-    <script>
-      tailwind.config = {
-        darkMode: 'class',
-      }
-    </script>
     <script type="module" src="./main.js"></script>
     <style>
       :root {
-        --bg-primary: #f3f4f6;
+        --bg-primary: #eff1f5;
         --bg-secondary: #ffffff;
-        --bg-tertiary: #f9fafb;
-        --text-primary: #111827;
-        --text-secondary: #4b5563;
-        --border-color: #e5e7eb;
+        --bg-tertiary: #e6e9ef;
+        --surface-0: #ccd0da;
+        --surface-1: #bcc0cc;
+        --surface-2: #acb0be;
+        --overlay-0: #9ca0b0;
+        --overlay-1: #8c8fa1;
+        --overlay-2: #7c7f93;
+        --mantle: #e6e9ef;
+        --crust: #dce0e8;
+        --text-primary: #4c4f69;
+        --text-secondary: #6c6f85;
+        --border-color: #ccd0da;
+        --terminal-bg: #e6e9ef;
       }
 
       .dark {
-        --bg-primary: #111827;
-        --bg-secondary: #1f2937;
-        --bg-tertiary: #374151;
-        --text-primary: #f9fafb;
-        --text-secondary: #9ca3af;
-        --border-color: #374151;
+        --bg-primary: #1e1e2e;
+        --bg-secondary: #181825;
+        --bg-tertiary: #313244;
+        --surface-0: #313244;
+        --surface-1: #45475a;
+        --surface-2: #585b70;
+        --overlay-0: #6c7086;
+        --overlay-1: #7f849c;
+        --overlay-2: #9399b2;
+        --mantle: #181825;
+        --crust: #11111b;
+        --text-primary: #cdd6f4;
+        --text-secondary: #a6adc8;
+        --border-color: #45475a;
+        --terminal-bg: #11111b;
       }
 
       #alert-icon.error { background-color: #fee2e2; color: #dc2626; }
@@ -38,68 +52,431 @@
       #alert-icon.success { background-color: #dcfce7; color: #16a34a; }
       #alert-icon.info { background-color: #dbeafe; color: #2563eb; }
 
+      .app-shell {
+        font-family: "Space Grotesk", "Segoe UI", sans-serif;
+        background: radial-gradient(circle at top left, rgba(114, 135, 253, 0.15), transparent 45%),
+          radial-gradient(circle at bottom right, rgba(148, 226, 213, 0.2), transparent 45%),
+          #eff1f5;
+      }
+
+      .dark .app-shell {
+        background: radial-gradient(circle at top left, rgba(203, 166, 247, 0.18), transparent 45%),
+          radial-gradient(circle at bottom right, rgba(137, 180, 250, 0.16), transparent 45%),
+          #1e1e2e;
+      }
+
       .server-item, .snippet-item {
-        background-color: var(--bg-tertiary);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        animation: float-in 0.25s ease;
+      }
+
+      .server-item:hover, .snippet-item:hover {
+        transform: translateY(-2px);
+      }
+
+      .sleek-pill {
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        backdrop-filter: blur(6px);
+      }
+
+      .header-glass {
+        background: rgba(255, 255, 255, 0.78);
+        border: 1px solid rgba(204, 208, 218, 0.8);
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      }
+
+      .dark .header-glass {
+        background: rgba(30, 30, 46, 0.65);
+        border-color: rgba(69, 71, 90, 0.55);
+      }
+
+      .sidebar-surface {
+        background: linear-gradient(180deg, var(--bg-secondary), var(--bg-tertiary));
+      }
+
+      .dark .sidebar-surface {
+        background: linear-gradient(180deg, var(--mantle), var(--bg-primary));
+      }
+
+      #sidebar {
+        border-color: var(--border-color) !important;
+      }
+
+      #main-content {
+        background: var(--bg-primary) !important;
+      }
+
+      .panel-surface {
+        background: var(--bg-secondary);
+        border-color: var(--border-color);
+      }
+
+      .dark .panel-surface {
+        background: var(--surface-0);
+        border-color: var(--surface-1);
+      }
+
+      .dark .server-item,
+      .dark .snippet-item {
+        background: var(--surface-0) !important;
+        border-color: var(--surface-1) !important;
+      }
+
+      .dark #header h1 {
         color: var(--text-primary);
+      }
+
+      .dark #connection-status {
+        background: var(--surface-1) !important;
+        color: var(--text-primary) !important;
+      }
+
+      .terminal-shell {
+        box-shadow: 0 20px 60px rgba(15, 23, 42, 0.3);
+        border: 1px solid rgba(148, 163, 184, 0.4);
+      }
+
+      .dark .terminal-shell {
+        border-color: rgba(69, 71, 90, 0.8);
+      }
+
+      .terminal-surface {
+        background: var(--terminal-bg);
+      }
+
+      .terminal-transparent .terminal-surface,
+      .terminal-transparent #terminal-container {
+        background: transparent !important;
+      }
+
+      #terminal-container {
+        padding: 2px;
+        box-sizing: border-box;
+        background: var(--terminal-bg);
+      }
+
+      /* Let the parent provide the background color so theme matches Catppuccin */
+      .xterm,
+      .xterm-viewport {
+        background-color: transparent !important;
+      }
+
+      .focus-toggle {
+        background: linear-gradient(135deg, #7287fd, #1e66f5);
+      }
+
+      .dark .focus-toggle {
+        background: linear-gradient(135deg, #b4befe, #7f849c);
+      }
+
+      @keyframes float-in {
+        0% { opacity: 0; transform: translateY(6px); }
+        100% { opacity: 1; transform: translateY(0); }
+      }
+      
+      /* Scrollbar styling for webkit */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #d1d5db;
+        border-radius: 4px;
+      }
+      .dark ::-webkit-scrollbar-thumb {
+        background: #4b5563;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #9ca3af;
+      }
+      .dark ::-webkit-scrollbar-thumb:hover {
+        background: #6b7280;
+      }
+
+      .focus-mode-active #sidebar,
+      .focus-mode-active #header,
+      .focus-mode-active #status-bar,
+      .focus-mode-active #connection-log-container {
+        display: none !important;
+      }
+      
+      .focus-mode-active #main-content {
+        padding: 0;
+      }
+      
+      .focus-mode-active #terminal-wrapper {
+        height: 100vh;
+        border-radius: 0;
+      }
+
+      .focus-mode-active #terminal-container {
+        height: 100% !important;
+        border-radius: 0;
+      }
+
+      #exit-focus-btn {
+        display: none;
+      }
+
+      .focus-mode-active #exit-focus-btn {
+        display: flex;
+      }
+      
+      .focus-mode-active #focus-btn {
+        display: none;
+      }
+
+      /* Custom utilities for local Tailwind build */
+      .w-80 { width: 20rem; }
+      .w-full { width: 100%; }
+      .h-full { height: 100%; }
+      .min-w-0 { min-width: 0; }
+      .min-h-0 { min-height: 0; }
+      .flex-shrink-0 { flex-shrink: 0; }
+      .flex-col { flex-direction: column; }
+      .relative { position: relative; }
+      .absolute { position: absolute; }
+      .top-2 { top: 0.5rem; }
+      .right-2 { right: 0.5rem; }
+      .z-10 { z-index: 10; }
+      .z-40 { z-index: 40; }
+      .z-50 { z-index: 50; }
+      .overflow-hidden { overflow: hidden; }
+      .overflow-y-auto { overflow-y: auto; }
+      .border-b { border-bottom-width: 1px; }
+      .border-b-2 { border-bottom-width: 2px; }
+      .border-blue-500 { border-color: #3b82f6; }
+      .border-gray-700 { border-color: #374151; }
+      .border-gray-600 { border-color: #4b5563; }
+      .rounded-md { border-radius: 0.375rem; }
+      .rounded-lg { border-radius: 0.5rem; }
+      .shadow-sm { box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05); }
+      .shadow-md { box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06); }
+      .transition-all { transition: all 0.2s ease; }
+      .duration-300 { transition-duration: 300ms; }
+      .opacity-0 { opacity: 0; }
+      .opacity-50 { opacity: 0.5; }
+      .hover\:opacity-100:hover { opacity: 1; }
+      .group:hover .group-hover\:opacity-100 { opacity: 1; }
+      .gap-1\.5 { gap: 0.375rem; }
+      .p-1\.5 { padding: 0.375rem; }
+      .px-2\.5 { padding-left: 0.625rem; padding-right: 0.625rem; }
+      .py-0\.5 { padding-top: 0.125rem; padding-bottom: 0.125rem; }
+      .text-xs { font-size: 0.75rem; line-height: 1rem; }
+      .text-sm { font-size: 0.875rem; line-height: 1.25rem; }
+      .text-\[10px\] { font-size: 10px; line-height: 1rem; }
+      .tracking-tight { letter-spacing: -0.015em; }
+      .tracking-wide { letter-spacing: 0.05em; }
+      .uppercase { text-transform: uppercase; }
+      .font-semibold { font-weight: 600; }
+      .mt-3 { margin-top: 0.75rem; }
+      .bg-gray-50 { background-color: #f9fafb; }
+      .bg-gray-800\/80 { background-color: rgba(30, 30, 46, 0.75); }
+      .bg-gray-800\/90 { background-color: rgba(30, 30, 46, 0.85); }
+      .bg-blue-50 { background-color: rgba(114, 135, 253, 0.12); }
+      .bg-red-50 { background-color: rgba(210, 15, 57, 0.12); }
+      .bg-blue-500 { background-color: #7287fd; }
+      .bg-blue-600 { background-color: #1e66f5; }
+      .bg-green-500 { background-color: #40a02b; }
+      .bg-green-600 { background-color: #2d8a1f; }
+      .bg-red-500 { background-color: #d20f39; }
+      .bg-red-600 { background-color: #b21535; }
+      .text-blue-400 { color: #7287fd; }
+      .text-blue-600 { color: #1e66f5; }
+      .text-gray-700 { color: #374151; }
+      .text-gray-800 { color: #1f2937; }
+      .text-gray-900 { color: #111827; }
+      .dark .dark\:text-blue-400 { color: #89b4fa; }
+      .dark .dark\:text-gray-200 { color: #cdd6f4; }
+      .dark .dark\:text-gray-400 { color: #a6adc8; }
+      .dark .dark\:text-gray-500 { color: #7f849c; }
+      .dark .dark\:bg-gray-700\/50 { background-color: rgba(69, 71, 90, 0.55); }
+      .dark .dark\:bg-gray-800\/50 { background-color: rgba(49, 50, 68, 0.6); }
+      .dark .dark\:bg-gray-900\/20 { background-color: rgba(30, 30, 46, 0.35); }
+      .hover\:bg-blue-50:hover { background-color: #eff6ff; }
+      .hover\:bg-red-50:hover { background-color: #fef2f2; }
+      .dark .dark\:hover\:bg-blue-900\/20:hover { background-color: rgba(137, 180, 250, 0.2); }
+      .dark .dark\:hover\:bg-red-900\/20:hover { background-color: rgba(243, 139, 168, 0.2); }
+
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+      }
+
+      .animate-pulse {
+        animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      .modal-backdrop {
+        background: rgba(17, 17, 27, 0.55);
+        backdrop-filter: blur(6px);
+      }
+
+      .modal-content {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+      }
+
+      /* Positioning utilities missing from Tailwind build */
+      .fixed {
+        position: fixed !important;
+      }
+      .absolute {
+        position: absolute !important;
+      }
+      .relative {
+        position: relative !important;
+      }
+      .inset-0 {
+        top: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        left: 0 !important;
+      }
+      .top-0 {
+        top: 0 !important;
+      }
+      .right-0 {
+        right: 0 !important;
+      }
+      .bottom-0 {
+        bottom: 0 !important;
+      }
+      .left-0 {
+        left: 0 !important;
       }
     </style>
   </head>
 
-  <body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-    <div class="flex h-screen">
-      <aside class="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 p-4 flex flex-col">
-        <div class="flex justify-between items-center mb-4">
-          <h2 class="text-lg font-bold">Servers</h2>
-          <button id="add-server-btn" class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm">+</button>
+  <body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 overflow-hidden app-shell">
+    <div id="app-container" class="flex h-screen w-full">
+      
+      <!-- Sidebar -->
+      <aside id="sidebar" class="w-80 flex-shrink-0 sidebar-surface border-r border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-300">
+        <!-- Sidebar Header / Tabs -->
+        <div class="flex border-b border-gray-200 dark:border-gray-700">
+          <button id="tab-servers" class="flex-1 py-3 text-sm font-medium border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 bg-gray-50 dark:bg-gray-700/50">
+            Servers
+          </button>
+          <button id="tab-snippets" class="flex-1 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+            Snippets
+          </button>
         </div>
-        <ul id="server-list" class="space-y-2 overflow-y-auto" style="max-height: 40vh;"></ul>
+
+        <!-- Tab Content: Servers -->
+        <div id="view-servers" class="flex-1 flex flex-col min-h-0">
+          <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
+            <h2 class="font-semibold text-gray-700 dark:text-gray-200">Hosts</h2>
+            <button id="add-server-btn" class="flex items-center gap-1 bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded text-sm transition-colors shadow-sm">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+              <span>Add</span>
+            </button>
+          </div>
+          <div id="server-filter-wrap" class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 hidden">
+            <label for="server-filter" class="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Filter hosts</label>
+            <input id="server-filter" type="text" placeholder="Search nickname, user, or host" class="w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 dark:text-white text-sm" />
+          </div>
+          <div class="flex-1 overflow-y-auto p-3 space-y-3" id="server-list">
+            <!-- Server items will be injected here -->
+          </div>
+        </div>
+
+        <!-- Tab Content: Snippets -->
+        <div id="view-snippets" class="flex-1 flex flex-col min-h-0 hidden">
+          <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
+            <h2 class="font-semibold text-gray-700 dark:text-gray-200">Snippets</h2>
+            <button id="add-snippet-btn" class="flex items-center gap-1 bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded text-sm transition-colors shadow-sm">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+              <span>Add</span>
+            </button>
+          </div>
+          <div class="flex-1 overflow-y-auto p-3 space-y-3" id="snippet-list">
+            <!-- Snippet items will be injected here -->
+          </div>
+        </div>
       </aside>
 
-      <aside class="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 p-4 flex flex-col">
-        <div class="flex justify-between items-center mb-4">
-          <h2 class="text-lg font-bold">Snippets</h2>
-          <button id="add-snippet-btn" class="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm">+</button>
-        </div>
-        <ul id="snippet-list" class="space-y-2 overflow-y-auto flex-1"></ul>
-      </aside>
-
-      <main class="flex-1 p-6">
-        <div class="flex justify-between items-center mb-6">
-          <h1 class="text-2xl font-bold">SSH Terminal</h1>
-          <div class="flex items-center gap-4">
-            <button id="theme-toggle" class="p-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors" title="Toggle theme">
-              <svg id="sun-icon" class="w-5 h-5 hidden dark:block text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <!-- Main Content -->
+      <main id="main-content" class="flex-1 flex flex-col h-full min-w-0 bg-gray-100 dark:bg-gray-900 p-4 transition-all duration-300">
+        
+        <!-- Header -->
+        <header id="header" class="flex justify-between items-center mb-4 flex-shrink-0 header-glass rounded-lg px-4 py-3">
+          <div class="flex items-center gap-3">
+            <h1 class="text-xl font-bold text-gray-800 dark:text-white tracking-tight">SSH Terminal</h1>
+            <div id="connection-status" class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
+              Disconnected
+            </div>
+          </div>
+          
+          <div class="flex items-center gap-3">
+             <button id="disconnect-btn" class="hidden flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded text-sm transition-colors shadow-sm">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                <span>Disconnect</span>
+            </button>
+            <button id="focus-toggle-btn" class="focus-toggle sleek-pill flex items-center gap-1.5 text-white px-3 py-1.5 rounded text-xs font-semibold uppercase tracking-wide shadow-sm" title="Toggle focus mode">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+              <span>Focus</span>
+            </button>
+            <button id="terminal-bg-toggle" class="sleek-pill flex items-center gap-1.5 text-gray-700 dark:text-gray-200 px-3 py-1.5 rounded text-xs font-semibold uppercase tracking-wide shadow-sm" title="Toggle terminal background">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h2a1 1 0 011 1v16a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm14 0h2a1 1 0 011 1v16a1 1 0 01-1 1h-2a1 1 0 01-1-1V4a1 1 0 011-1zM7 12h10"/></svg>
+              <span id="terminal-bg-label">Solid</span>
+            </button>
+            <button id="theme-toggle" class="p-2 rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors shadow-sm" title="Toggle theme">
+              <svg id="sun-icon" class="w-5 h-5 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
-              <svg id="moon-icon" class="w-5 h-5 block dark:hidden text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg id="moon-icon" class="w-5 h-5 block dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
               </svg>
             </button>
-            <div id="connection-status" class="text-sm text-gray-600 dark:text-gray-400">Disconnected</div>
           </div>
+        </header>
+
+        <!-- Terminal Area -->
+        <div id="terminal-wrapper" class="terminal-shell terminal-surface flex-1 rounded-lg overflow-hidden relative flex flex-col min-h-0">
+            <div class="absolute top-2 right-2 z-10 flex gap-2">
+                <button id="focus-btn" class="p-1.5 bg-gray-800/80 hover:bg-gray-700 text-white rounded opacity-50 hover:opacity-100 transition-all" title="Focus Mode">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+                </button>
+                <button id="exit-focus-btn" class="p-2 bg-gray-800/90 hover:bg-gray-700 text-white rounded shadow-md transition-all" title="Exit Focus Mode">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4M4 16v-4m0 0h4m-4 0l5 5m11-5l-5 5m5-5v4m0-4h-4"/></svg>
+                </button>
+            </div>
+            <div id="terminal-container" class="w-full h-full"></div>
         </div>
-        <div class="flex justify-end mb-2">
-          <button id="disconnect-btn" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm hidden">Disconnect</button>
-        </div>
-        <div id="terminal-container" class="bg-black text-green-400 font-mono rounded h-[calc(100vh-200px)] overflow-hidden p-1"></div>
         
-        <div id="status-bar" class="mt-2 flex justify-between items-center px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded text-sm border border-gray-300 dark:border-gray-700">
-          <div id="status-bar-host" class="text-gray-600 dark:text-gray-400">Not connected</div>
-          <div id="status-bar-state" class="font-medium">Disconnected</div>
+        <!-- Status Bar -->
+        <div id="status-bar" class="mt-3 flex justify-between items-center px-4 py-2 bg-white dark:bg-gray-800 rounded-lg text-sm border border-gray-200 dark:border-gray-700 shadow-sm flex-shrink-0">
+          <div class="flex items-center gap-2">
+            <div class="w-2 h-2 rounded-full bg-gray-400" id="status-indicator"></div>
+            <div id="status-bar-host" class="text-gray-600 dark:text-gray-400 font-mono text-xs">Not connected</div>
+          </div>
+          <div id="status-bar-state" class="font-medium text-xs uppercase tracking-wide text-gray-500">Idle</div>
         </div>
 
-        <div class="mt-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-3">
-          <div class="flex items-center justify-between mb-2">
-            <h3 class="text-sm font-semibold">Connection log</h3>
-            <span class="text-xs text-gray-500 dark:text-gray-400">latest first</span>
+        <!-- Connection Log -->
+        <div id="connection-log-container" class="mt-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3 shadow-sm flex-shrink-0 max-h-32 flex flex-col">
+          <div class="flex items-center justify-between mb-2 flex-shrink-0">
+            <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-500">Connection Log</h3>
+            <button id="clear-log-btn" class="text-xs text-blue-500 hover:text-blue-600">Clear</button>
           </div>
-          <ul id="connection-log-list" class="max-h-32 overflow-y-auto space-y-1"></ul>
+          <ul id="connection-log-list" class="overflow-y-auto flex-1 space-y-1 text-xs font-mono"></ul>
         </div>
+
       </main>
     </div>
 
-    <div id="alert-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
-      <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-96 max-w-sm mx-4">
+    <div id="alert-modal" class="hidden fixed inset-0 modal-backdrop z-50">
+      <div class="modal-content bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-96 max-w-sm mx-4">
         <div class="flex items-center gap-3 mb-4">
           <div id="alert-icon" class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center">
             <svg id="alert-icon-svg" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -117,8 +494,8 @@
       </div>
     </div>
 
-    <div id="host-key-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
-      <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-[28rem] max-w-full mx-4">
+    <div id="host-key-modal" class="hidden fixed inset-0 modal-backdrop z-50">
+      <div class="modal-content bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-[28rem] max-w-full mx-4">
         <div class="flex items-start justify-between mb-4">
           <div>
             <h3 class="text-xl font-bold">Trust this host key?</h3>
@@ -148,11 +525,15 @@
       </div>
     </div>
 
-    <div id="server-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40">
-      <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-96">
+    <div id="server-modal" class="hidden fixed inset-0 modal-backdrop" style="z-index: 9999;">
+      <div class="modal-content bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-96">
         <h3 id="modal-title" class="text-xl font-bold mb-4">Add Server</h3>
         <form id="server-form" class="space-y-4">
           <input type="hidden" id="server-id" />
+          <div>
+            <label class="block text-sm font-medium mb-1">Nickname (optional)</label>
+            <input type="text" id="server-nickname" class="w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 dark:text-white" />
+          </div>
           <div>
             <label class="block text-sm font-medium mb-1">Host</label>
             <input type="text" id="server-host" required class="w-full rounded border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 dark:text-white" />
@@ -188,8 +569,8 @@
       </div>
     </div>
 
-    <div id="snippet-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center">
-      <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-96">
+    <div id="snippet-modal" class="hidden fixed inset-0 modal-backdrop">
+      <div class="modal-content bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-96">
         <h3 id="snippet-modal-title" class="text-xl font-bold mb-4">Add Snippet</h3>
         <form id="snippet-form" class="space-y-4">
           <input type="hidden" id="snippet-id" />
