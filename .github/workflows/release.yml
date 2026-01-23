@@ -6,7 +6,7 @@ on:
 
 jobs:
   build-windows:
-    name: Build Windows (.exe)
+    name: Build Windows (.msi)
     runs-on: windows-latest
     steps:
       - name: Checkout repository
@@ -16,25 +16,25 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          targets: x86_64-pc-windows-gnu
+          targets: x86_64-pc-windows-msvc
 
       - name: Install dependencies
         run: |
-          rustup target add x86_64-pc-windows-gnu
+          rustup target add x86_64-pc-windows-msvc
 
       - name: Build Tauri app
         working-directory: ./src-tauri
-        run: cargo tauri build --target x86_64-pc-windows-gnu
+        run: cargo tauri build --target x86_64-pc-windows-msvc
 
       - name: Upload Windows installer
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ env.upload_url }}
+          upload_url: ${{ github.event.release.upload_url }}
           asset_path: src-tauri/target/release/bundle/msi/ssh-thing_0.1.0_x64_en-US.msi
-          asset_name: ssh-thing-windows-x64.exe
-          asset_content_type: application/vnd.microsoft.portable-executable
+          asset_name: ssh-thing-windows-x64.msi
+          asset_content_type: application/x-msi
 
   build-macos:
     name: Build macOS (.dmg)
@@ -58,7 +58,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ env.upload_url }}
+          upload_url: ${{ github.event.release.upload_url }}
           asset_path: src-tauri/target/release/bundle/dmg/ssh-thing_0.1.0_aarch64.dmg
           asset_name: ssh-thing-macos-arm64.dmg
           asset_content_type: application/x-apple-diskimage
@@ -94,7 +94,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ env.upload_url }}
+          upload_url: ${{ github.event.release.upload_url }}
           asset_path: src-tauri/target/release/bundle/deb/ssh-thing_0.1.0_amd64.deb
           asset_name: ssh-thing-linux-amd64.deb
           asset_content_type: application/vnd.debian.binary-package
@@ -104,7 +104,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ env.upload_url }}
+          upload_url: ${{ github.event.release.upload_url }}
           asset_path: src-tauri/target/release/bundle/appimage/ssh-thing_0.1.0_amd64.AppImage
           asset_name: ssh-thing-linux-amd64.AppImage
           asset_content_type: application/x-executable

@@ -9,6 +9,7 @@ const welcomeSessionId = "__welcome__";
 let connectionLog = [];
 let pendingHostKey = null;
 let pendingDeleteServerId = null;
+let pendingDisconnectResolve = null;
 let localEchoEnabled = false;
 let terminalTransparent = false;
 let serverFilterTerm = "";
@@ -606,16 +607,16 @@ function renderServerList() {
     let buttonClass = "bg-emerald-500 hover:bg-emerald-600";
     let buttonIcon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>';
     if (isConnected) {
-      statusBadge = '<span class="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-green-600 text-white">Connected</span>';
+      statusBadge = '<span class="inline-flex items-center px-2.5 py-0.5 text-[10px] font-semibold rounded-full bg-green-600 text-white leading-tight shadow-sm">Connected</span>';
       buttonLabel = "Disconnect";
-      buttonClass = "bg-rose-500 hover:bg-rose-600";
+      buttonClass = "bg-rose-600 hover:bg-rose-700 focus:ring-2 focus:ring-rose-300";
       buttonIcon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>';
     } else if (isConnecting) {
-      statusBadge = '<span class="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-yellow-500 text-white">Connecting</span>';
+      statusBadge = '<span class="inline-flex items-center px-2.5 py-0.5 text-[10px] font-semibold rounded-full bg-yellow-500 text-white leading-tight">Connecting</span>';
       buttonLabel = "Connecting";
       buttonClass = "bg-yellow-500 hover:bg-yellow-600";
     } else if (isErrored || isDisconnected) {
-      statusBadge = '<span class="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-amber-500 text-white">Offline</span>';
+      statusBadge = '<span class="inline-flex items-center px-2.5 py-0.5 text-[10px] font-semibold rounded-full bg-amber-500 text-white leading-tight">Offline</span>';
       buttonLabel = "Connect";
       buttonClass = "bg-emerald-500 hover:bg-emerald-600";
     }
@@ -647,7 +648,7 @@ function renderServerList() {
                 ${authLabel}
             </span>
         </div>
-        <button class="connect-btn ${buttonClass} text-white px-4 py-2 rounded-lg shadow-sm hover:shadow transition-all font-semibold flex items-center gap-2" data-id="${server.id}">
+        <button onclick="window.handleCardDisconnect?.('${server.id}')" class="connect-btn ${buttonClass} text-white px-4 py-2 rounded-lg shadow-sm hover:shadow transition-all font-semibold flex items-center gap-2" data-id="${server.id}">
             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">${buttonIcon}</svg>
             ${buttonLabel}
         </button>
@@ -714,12 +715,51 @@ async function connectToServer(id) {
   }
 }
 
-async function disconnectFromServer(serverId = null) {
-  const session = serverId ? sessions.get(serverId) : getActiveSession();
-  if (!session || !session.server) return;
+async function disconnectFromServer(serverId = null, { requireConfirm = false } = {}) {
+  // Normalize to serverId string (ignore PointerEvent payloads)
+  const resolvedId = (() => {
+    if (!serverId) return null;
+    if (typeof serverId === "string") return serverId;
+    if (serverId && typeof serverId === "object" && "target" in serverId) {
+      const target = serverId.target?.closest?.(".connect-btn") || serverId.currentTarget?.closest?.(".connect-btn");
+      return target?.dataset?.id || null;
+    }
+    return null;
+  })();
+
+  console.log("[disconnect] click", { serverId, resolvedId, activeSessionId, passedId: serverId });
+
+  const session = resolvedId ? sessions.get(resolvedId) : getActiveSession();
+  if (!session || !session.server) {
+    console.warn("[disconnect] no session/server", { serverId, resolvedId, activeSessionId });
+    return;
+  }
+
+  if (requireConfirm) {
+    const label = session.server.nickname && session.server.nickname.trim().length > 0
+      ? session.server.nickname
+      : `${session.server.user}@${session.server.host}`;
+    const confirmed = await confirmDisconnect(label);
+    if (!confirmed) return;
+  }
 
   try {
-    await invoke("disconnect", { serverId: session.server.id });
+    // Show immediate UI feedback
+    const headerDisconnect = document.getElementById("disconnect-btn");
+    const cardDisconnect = document.querySelector(`.connect-btn[data-id="${session.server.id}"]`);
+    if (headerDisconnect) {
+      headerDisconnect.disabled = true;
+      headerDisconnect.classList.add("opacity-70", "cursor-not-allowed");
+    }
+    if (cardDisconnect) {
+      cardDisconnect.disabled = true;
+      cardDisconnect.textContent = "Disconnecting...";
+      cardDisconnect.classList.add("opacity-70", "cursor-wait");
+    }
+
+    const payload = { serverId: session.server.id };
+    console.log("[disconnect] invoking", payload);
+    await invoke("disconnect", payload);
     
     // Clean up session
     if (session.container?.parentElement) {
@@ -740,8 +780,35 @@ async function disconnectFromServer(serverId = null) {
   } catch (error) {
     console.error("Failed to disconnect:", error);
     alert("Failed to disconnect: " + error);
+  } finally {
+    renderServerList();
+    updateStatusBarForActiveSession();
+    // Restore button states
+    const headerDisconnect = document.getElementById("disconnect-btn");
+    const cardDisconnect = document.querySelector(`.connect-btn[data-id="${session?.server?.id}"]`);
+    if (headerDisconnect) {
+      headerDisconnect.disabled = false;
+      headerDisconnect.classList.remove("opacity-70", "cursor-not-allowed");
+    }
+    if (cardDisconnect) {
+      cardDisconnect.disabled = false;
+      cardDisconnect.classList.remove("opacity-70", "cursor-wait");
+    }
   }
 }
+
+// Global handlers for inline fallback clicks
+window.handleHeaderDisconnect = () => disconnectFromServer(null, { requireConfirm: true });
+window.handleCardDisconnect = (id) => {
+  const session = sessions.get(id);
+  const state = session?.connectionState?.type;
+  if (state === "Connected" || state === "Connecting") {
+    setActiveSession(id);
+    disconnectFromServer(id, { requireConfirm: true });
+  } else {
+    connectToServer(id);
+  }
+};
 
 function logConnectionEvent(message, detail = "", type = "info") {
   const timestamp = new Date().toLocaleTimeString();
@@ -1019,6 +1086,36 @@ function closeDeleteModal() {
   pendingDeleteServerId = null;
 }
 
+function closeDisconnectConfirmModal() {
+  const modal = document.getElementById("disconnect-confirm-modal");
+  if (modal) {
+    modal.classList.add("hidden");
+  }
+}
+
+function resolveDisconnectConfirm(result) {
+  const resolve = pendingDisconnectResolve;
+  pendingDisconnectResolve = null;
+  closeDisconnectConfirmModal();
+  if (resolve) {
+    resolve(result);
+  }
+}
+
+function confirmDisconnect(label) {
+  const modal = document.getElementById("disconnect-confirm-modal");
+  const message = document.getElementById("disconnect-confirm-message");
+  if (message) {
+    message.textContent = `Disconnect from ${label}?`;
+  }
+  if (modal) {
+    modal.classList.remove("hidden");
+  }
+  return new Promise((resolve) => {
+    pendingDisconnectResolve = resolve;
+  });
+}
+
 function openSnippetEditModal(id) {
   const snippet = snippets.find((s) => s.id === id);
   if (!snippet) return;
@@ -1161,9 +1258,19 @@ window.addEventListener("DOMContentLoaded", () => {
   
   document.getElementById("cancel-btn").addEventListener("click", closeModal);
   document.getElementById("server-form").addEventListener("submit", saveServer);
-  document.getElementById("disconnect-btn").addEventListener("click", disconnectFromServer);
+  document.getElementById("disconnect-btn").addEventListener("click", () => disconnectFromServer(null, { requireConfirm: true }));
   document.getElementById("delete-cancel-btn").addEventListener("click", closeDeleteModal);
   document.getElementById("delete-confirm-btn").addEventListener("click", confirmDeleteServer);
+  document.getElementById("disconnect-cancel-btn")?.addEventListener("click", () => resolveDisconnectConfirm(false));
+  document.getElementById("disconnect-confirm-btn")?.addEventListener("click", () => resolveDisconnectConfirm(true));
+  const disconnectModal = document.getElementById("disconnect-confirm-modal");
+  if (disconnectModal) {
+    disconnectModal.addEventListener("click", (event) => {
+      if (event.target === disconnectModal) {
+        resolveDisconnectConfirm(false);
+      }
+    });
+  }
   const deleteModal = document.getElementById("delete-confirm-modal");
   if (deleteModal) {
     deleteModal.addEventListener("click", (event) => {
@@ -1196,10 +1303,7 @@ window.addEventListener("DOMContentLoaded", () => {
       const session = sessions.get(id);
       if (session && session.connectionState.type === "Connected") {
         setActiveSession(id);
-        const confirmed = confirm("Disconnect from this server?");
-        if (confirmed) {
-          disconnectFromServer(id);
-        }
+        disconnectFromServer(id, { requireConfirm: true });
       } else {
         connectToServer(id);
       }
@@ -1273,7 +1377,7 @@ window.addEventListener("DOMContentLoaded", () => {
         e.preventDefault();
         const activeSession = getActiveSession();
         if (activeSession && activeSession.server) {
-          disconnectFromServer();
+          disconnectFromServer(null, { requireConfirm: true });
         }
       }
     }

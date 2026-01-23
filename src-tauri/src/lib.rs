@@ -11,6 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 use keyring::Entry;
 use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::time::{timeout, Duration};
 use tracing::{debug, info};
 
 const SERVERS_FILE: &str = "servers.json";
@@ -1044,9 +1045,16 @@ pub async fn disconnect_ssh(
     server_id: Option<&str>,
 ) -> Result<(), String> {
     if let Some(s) = session {
-        let _ = s
-            .disconnect(russh::Disconnect::ByApplication, "disconnected", "en")
-            .await;
+        let disconnect_result = timeout(
+            Duration::from_secs(2),
+            s.disconnect(russh::Disconnect::ByApplication, "disconnected", "en"),
+        )
+        .await;
+
+        if disconnect_result.is_err() {
+            #[cfg(debug_assertions)]
+            debug!(server_id = server_id, "SSH disconnect timed out");
+        }
     }
     emit_connection_state(app, server_id, None, ConnectionState::Disconnected)?;
     Ok(())
@@ -1401,7 +1409,7 @@ async fn disconnect(app: AppHandle, server_id: String) -> Result<(), String> {
         };
 
         if let Some(tx) = cmd_tx {
-            let _ = tx.send(ShellCommand::Close).await;
+            let _ = timeout(Duration::from_millis(250), tx.send(ShellCommand::Close)).await;
         }
     }
 
