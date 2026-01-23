@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [windows-latest, macos-latest]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -22,14 +22,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          targets: ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || matrix.os == 'macos-latest' && 'aarch64-apple-darwin' || 'x86_64-unknown-linux-gnu' }}
+          targets: ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || 'aarch64-apple-darwin' }}
           components: rustfmt, clippy
-
-      - name: Install dependencies (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev pkg-config build-essential
 
       - name: Install dependencies (Windows)
         if: matrix.os == 'windows-latest'
@@ -50,15 +44,15 @@ jobs:
 
       - name: Build project
         working-directory: ./src-tauri
-        run: cargo build --target ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || matrix.os == 'macos-latest' && 'aarch64-apple-darwin' || 'x86_64-unknown-linux-gnu' }}
+        run: cargo build --target ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || 'aarch64-apple-darwin' }}
 
       - name: Run tests
         working-directory: ./src-tauri
-        run: cargo test --target ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || matrix.os == 'macos-latest' && 'aarch64-apple-darwin' || 'x86_64-unknown-linux-gnu' }}
+        run: cargo test --target ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || 'aarch64-apple-darwin' }}
 
       - name: Run cargo check
         working-directory: ./src-tauri
-        run: cargo check --target ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || matrix.os == 'macos-latest' && 'aarch64-apple-darwin' || 'x86_64-unknown-linux-gnu' }}
+        run: cargo check --target ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || 'aarch64-apple-darwin' }}
 
   tauri-build:
     name: Build Tauri app on ${{ matrix.os }}
@@ -67,7 +61,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [windows-latest, macos-latest]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -76,12 +70,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-
-      - name: Install dependencies (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev pkg-config build-essential
 
       - name: Install dependencies (Windows)
         if: matrix.os == 'windows-latest'
@@ -101,11 +89,6 @@ jobs:
         if: matrix.os == 'macos-latest'
         working-directory: ./src-tauri
         run: cargo tauri build --target aarch64-apple-darwin
-
-      - name: Build Tauri app (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        working-directory: ./src-tauri
-        run: cargo tauri build --target x86_64-unknown-linux-gnu
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
