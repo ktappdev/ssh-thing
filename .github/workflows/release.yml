@@ -4,6 +4,9 @@ on:
   release:
     types: [created]
 
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     name: Build Windows (.msi)
@@ -11,6 +14,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set app version from release tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          node -e "const fs=require('fs'); const p='src-tauri/tauri.conf.json'; const cfg=JSON.parse(fs.readFileSync(p,'utf8')); const v=(process.env.RELEASE_TAG||'').replace(/^v/,''); cfg.version=v; fs.writeFileSync(p, JSON.stringify(cfg,null,2)); console.log('tauri.conf.json version set to', v);"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -22,29 +31,18 @@ jobs:
         run: |
           rustup target add x86_64-pc-windows-msvc
 
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli
+
       - name: Build Tauri app
         working-directory: ./src-tauri
         run: cargo tauri build --target x86_64-pc-windows-msvc
 
-      - name: Upload Windows installer
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload Windows installer to GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: src-tauri/target/release/bundle/msi/ssh-thing_0.1.0_x64_en-US.msi
-          asset_name: ssh-thing-windows-x64.msi
-          asset_content_type: application/x-msi
-
-      - name: Upload macOS install notes
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: MACOS_INSTALL.md
-          asset_name: MACOS_INSTALL.md
-          asset_content_type: text/markdown
+          files: |
+            src-tauri/target/release/bundle/msi/*.msi
 
   build-macos:
     name: Build macOS (.dmg)
@@ -53,35 +51,30 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set app version from release tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          node -e "const fs=require('fs'); const p='src-tauri/tauri.conf.json'; const cfg=JSON.parse(fs.readFileSync(p,'utf8')); const v=(process.env.RELEASE_TAG||'').replace(/^v/,''); cfg.version=v; fs.writeFileSync(p, JSON.stringify(cfg,null,2)); console.log('tauri.conf.json version set to', v);"
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
           targets: aarch64-apple-darwin
 
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli
+
       - name: Build Tauri app
         working-directory: ./src-tauri
         run: cargo tauri build --target aarch64-apple-darwin
 
-      - name: Upload macOS installer
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload macOS installer to GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: src-tauri/target/release/bundle/dmg/ssh-thing_0.1.0_aarch64.dmg
-          asset_name: ssh-thing-macos-arm64.dmg
-          asset_content_type: application/x-apple-diskimage
-
-      - name: Upload macOS install notes
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: MACOS_INSTALL.md
-          asset_name: MACOS_INSTALL.md
-          asset_content_type: text/markdown
+          files: |
+            src-tauri/target/release/bundle/dmg/*.dmg
 
   build-linux:
     name: Build Linux (.deb, .AppImage)
@@ -89,6 +82,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set app version from release tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          node -e "const fs=require('fs'); const p='src-tauri/tauri.conf.json'; const cfg=JSON.parse(fs.readFileSync(p,'utf8')); const v=(process.env.RELEASE_TAG||'').replace(/^v/,''); cfg.version=v; fs.writeFileSync(p, JSON.stringify(cfg,null,2)); console.log('tauri.conf.json version set to', v);"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -101,6 +100,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev pkg-config build-essential libayatana-appindicator-dev
 
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli
+
       - name: Build Tauri app (DEB)
         working-directory: ./src-tauri
         run: cargo tauri build --target x86_64-unknown-linux-gnu --bundler deb
@@ -109,32 +111,10 @@ jobs:
         working-directory: ./src-tauri
         run: cargo tauri build --target x86_64-unknown-linux-gnu --bundler appimage
 
-      - name: Upload DEB installer
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload Linux installers to GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: src-tauri/target/release/bundle/deb/ssh-thing_0.1.0_amd64.deb
-          asset_name: ssh-thing-linux-amd64.deb
-          asset_content_type: application/vnd.debian.binary-package
-
-      - name: Upload AppImage installer
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: src-tauri/target/release/bundle/appimage/ssh-thing_0.1.0_amd64.AppImage
-          asset_name: ssh-thing-linux-amd64.AppImage
-          asset_content_type: application/x-executable
-
-      - name: Upload macOS install notes
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: MACOS_INSTALL.md
-          asset_name: MACOS_INSTALL.md
-          asset_content_type: text/markdown
+          files: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            MACOS_INSTALL.md
