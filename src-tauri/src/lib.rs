@@ -12,7 +12,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use keyring::Entry;
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::time::{timeout, Duration};
-use tracing::{debug, info};
+use tracing::debug;
 
 const SERVERS_FILE: &str = "servers.json";
 const SNIPPETS_FILE: &str = "snippets.json";
@@ -1169,7 +1169,7 @@ pub async fn open_pty_shell(
                             }
                         }
                         Some(ShellCommand::Resize(width, height)) => {
-                            if let Err(e) = channel_for_task.window_change(width, height, 0, 0).await {
+                            if let Err(_e) = channel_for_task.window_change(width, height, 0, 0).await {
                                 #[cfg(debug_assertions)]
                                 debug!(
                                     shell_id = %shell_id_for_task,
@@ -1374,7 +1374,7 @@ async fn connect(app: AppHandle, server: ServerConnection) -> Result<String, Str
     let mut sessions = state.sessions.lock().await;
     let session = sessions
         .get_mut(&server.id)
-        .ok_or_else(|| format!("Session not found"))?;
+        .ok_or_else(|| "Session not found".to_string())?;
 
     let config = PtyConfig::default();
     let shell = open_pty_shell(&app, session, &config, &server.id).await?;

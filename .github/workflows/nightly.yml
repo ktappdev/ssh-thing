@@ -1,8 +1,7 @@
-name: Nightly Builds (main)
+name: Nightly Builds (manual)
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
