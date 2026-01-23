@@ -80,24 +80,24 @@ This file is an atomic task list derived from the PRD for building a reliable SS
 # Phase 2 — Encrypted secrets (passwords/keys)
 
 ## Backend: Keychain integration
-- [ ] Add tauri keychain plugin or minimal native keychain wrapper.
-- [ ] Store server secrets (password/private key) in keychain, not in JSON.
-- [ ] Replace `ServerConnection.auth` to hold a secret reference ID (keychain key).
-- [ ] Migrate existing servers on load: if plaintext secrets exist, prompt to migrate.
+- [x] Add tauri keychain plugin or minimal native keychain wrapper. (Implemented with native `keyring` crate)
+- [x] Store server secrets (password/private key) in keychain, not in JSON.
+- [x] Replace `ServerConnection.auth` to hold a secret reference ID (keychain key).
+- [x] Migrate existing servers on load: if plaintext secrets exist, prompt to migrate. (Auto-migrates on load)
 
 ## Frontend: Secrets workflow
-- [ ] On save/update server: write secret to keychain, store reference ID only.
-- [ ] On connect: request secret from keychain using reference ID.
-- [ ] On delete: remove secret from keychain.
+- [x] On save/update server: write secret to keychain, store reference ID only.
+- [x] On connect: request secret from keychain using reference ID.
+- [x] On delete: remove secret from keychain.
 
 ## Manual acceptance checks (Phase 2)
-- [ ] Saving a server no longer writes secrets to JSON.
+- [x] Saving a server no longer writes secrets to JSON.
 - [ ] Connection still succeeds with stored secrets.
 - [ ] Removing a server removes its secret.
 
 ---
 
-# Phase 3 — SFTP MVP (separate pane/modal)
+# Phase 3 — SFTP MVP (Stretch)
 
 ## Backend: SFTP plumbing
 - [ ] Add SFTP support (russh-sftp or equivalent).

@@ -380,6 +380,8 @@ function openModal() {
   document.getElementById("modal-title").textContent = "Add Server";
   document.getElementById("server-form").reset();
   document.getElementById("server-id").value = "";
+  document.getElementById("server-password").placeholder = "";
+  document.getElementById("server-key").placeholder = "";
 }
 
 function closeModal() {
@@ -402,11 +404,28 @@ function openEditModal(id) {
     document.getElementById("password-field").classList.remove("hidden");
     document.getElementById("key-field").classList.add("hidden");
     document.getElementById("server-password").value = server.auth.password || "";
+    document.getElementById("server-password").placeholder = "";
+  } else if (server.auth.type === "SecretRef") {
+    const isPassword = !server.auth.kind || server.auth.kind === "Password";
+    if (isPassword) {
+      document.getElementById("auth-type").value = "password";
+      document.getElementById("password-field").classList.remove("hidden");
+      document.getElementById("key-field").classList.add("hidden");
+      document.getElementById("server-password").value = "";
+      document.getElementById("server-password").placeholder = "Stored in keychain. Enter to replace.";
+    } else {
+      document.getElementById("auth-type").value = "key";
+      document.getElementById("password-field").classList.add("hidden");
+      document.getElementById("key-field").classList.remove("hidden");
+      document.getElementById("server-key").value = "";
+      document.getElementById("server-key").placeholder = "Stored in keychain. Paste new key to replace.";
+    }
   } else {
     document.getElementById("auth-type").value = "key";
     document.getElementById("password-field").classList.add("hidden");
     document.getElementById("key-field").classList.remove("hidden");
     document.getElementById("server-key").value = server.auth.private_key || "";
+    document.getElementById("server-key").placeholder = "";
   }
 }
 
@@ -418,18 +437,54 @@ async function saveServer(e) {
   const port = parseInt(document.getElementById("server-port").value);
   const user = document.getElementById("server-user").value;
   const authType = document.getElementById("auth-type").value;
+  const existing = servers.find((s) => s.id === id);
 
   let auth;
   if (authType === "password") {
-    auth = {
-      type: "Password",
-      password: document.getElementById("server-password").value,
-    };
+    const passwordValue = document.getElementById("server-password").value;
+    const existingSecretId = existing && existing.auth && existing.auth.type === "SecretRef" && (existing.auth.kind === "Password" || !existing.auth.kind)
+      ? existing.auth.secret_id
+      : null;
+
+    if (passwordValue) {
+      const secret_id = await invoke("upsert_secret", {
+        secret_id: existingSecretId ?? null,
+        secret: passwordValue,
+        kind: "Password",
+      });
+      auth = { type: "SecretRef", secret_id, kind: "Password" };
+    } else if (existingSecretId) {
+      auth = { type: "SecretRef", secret_id: existingSecretId, kind: "Password" };
+    } else if (existing && existing.auth && existing.auth.type === "Password" && existing.auth.password) {
+      // Legacy plaintext fallback: require user to re-enter
+      alert("Please enter a password to store in the keychain.");
+      return;
+    } else {
+      alert("Please enter a password.");
+      return;
+    }
   } else {
-    auth = {
-      type: "Key",
-      private_key: document.getElementById("server-key").value,
-    };
+    const keyValue = document.getElementById("server-key").value;
+    const existingSecretId = existing && existing.auth && existing.auth.type === "SecretRef" && existing.auth.kind === "PrivateKey"
+      ? existing.auth.secret_id
+      : null;
+
+    if (keyValue) {
+      const secret_id = await invoke("upsert_secret", {
+        secret_id: existingSecretId ?? null,
+        secret: keyValue,
+        kind: "PrivateKey",
+      });
+      auth = { type: "SecretRef", secret_id, kind: "PrivateKey" };
+    } else if (existingSecretId) {
+      auth = { type: "SecretRef", secret_id: existingSecretId, kind: "PrivateKey" };
+    } else if (existing && existing.auth && existing.auth.type === "Key" && existing.auth.private_key) {
+      alert("Please paste your private key to store in the keychain.");
+      return;
+    } else {
+      alert("Please paste your private key.");
+      return;
+    }
   }
 
   const server = {

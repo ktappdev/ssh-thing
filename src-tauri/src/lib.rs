@@ -9,12 +9,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
+use keyring::Entry;
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tracing::{debug, info};
 
 const SERVERS_FILE: &str = "servers.json";
 const SNIPPETS_FILE: &str = "snippets.json";
-const SNIPPETS_TOML_FILE: &str = "snippets.toml";
 const KNOWN_HOSTS_FILE: &str = "known_hosts.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -23,6 +23,129 @@ pub enum ConnectionState {
     Connected,
     Disconnected,
     Error(String),
+}
+
+#[tauri::command]
+async fn greet(name: String) -> String {
+    format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
+#[tauri::command]
+async fn get_servers(app: AppHandle) -> Result<Vec<ServerConnection>, String> {
+    let app_dir = get_app_dir(&app)?;
+    load_servers(&app_dir, &app)
+}
+
+#[tauri::command]
+async fn update_server(
+    app: AppHandle,
+    id: String,
+    server: ServerConnection,
+) -> Result<Vec<ServerConnection>, String> {
+    let app_dir = get_app_dir(&app)?;
+    let mut servers = load_servers(&app_dir, &app)?;
+
+    let index = servers
+        .iter()
+        .position(|s| s.id == id)
+        .ok_or_else(|| format!("Server with id {} not found", id))?;
+
+    let mut updated = server;
+    migrate_server_auth(&app, &mut updated)?;
+    servers[index] = updated;
+    save_servers(&app_dir, &servers)?;
+    Ok(servers)
+}
+
+#[tauri::command]
+async fn trust_host_key(app: AppHandle, host: String, port: u16) -> Result<(), String> {
+    let host_key_id = format!("{}:{}", host, port);
+    let state = app.state::<AppState>();
+
+    let pending = {
+        let mut pending_map = state.pending_host_keys.lock().await;
+        pending_map.remove(&host_key_id)
+    };
+
+    let Some(pending) = pending else {
+        return Err("No pending host key prompt".to_string());
+    };
+
+    let _ = pending.sender.send(true);
+
+    let app_dir = get_app_dir(&app)?;
+    let mut hosts = load_known_hosts(&app_dir)?;
+    hosts.retain(|h| !(h.host == host && h.port == port));
+    let added_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| format!("Time error: {}", e))?
+        .as_secs();
+    hosts.push(KnownHost {
+        host,
+        port,
+        key_type: pending.key_type,
+        fingerprint: pending.fingerprint,
+        public_key_base64: pending.public_key_base64,
+        added_at,
+    });
+    save_known_hosts(&app_dir, &hosts)
+}
+
+#[tauri::command]
+async fn reject_host_key(app: AppHandle, host: String, port: u16) -> Result<(), String> {
+    let host_key_id = format!("{}:{}", host, port);
+    let state = app.state::<AppState>();
+
+    let pending = {
+        let mut pending_map = state.pending_host_keys.lock().await;
+        pending_map.remove(&host_key_id)
+    };
+
+    if let Some(pending) = pending {
+        let _ = pending.sender.send(false);
+    }
+
+    Ok(())
+}
+
+fn get_snippets_path(app_dir: &PathBuf) -> PathBuf {
+    app_dir.join(SNIPPETS_FILE)
+}
+
+fn load_snippets(app_dir: &PathBuf) -> Result<Vec<Snippet>, String> {
+    let path = get_snippets_path(app_dir);
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let data = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read snippets file: {}", e))?;
+    serde_json::from_str(&data).map_err(|e| format!("Failed to parse snippets file: {}", e))
+}
+
+fn save_snippets(app_dir: &PathBuf, snippets: &Vec<Snippet>) -> Result<(), String> {
+    let path = get_snippets_path(app_dir);
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("Invalid path for snippets file"))?;
+    fs::create_dir_all(parent)
+        .map_err(|e| format!("Failed to create app data directory: {}", e))?;
+    let content = serde_json::to_string_pretty(snippets)
+        .map_err(|e| format!("Failed to serialize snippets: {}", e))?;
+    fs::write(&path, content).map_err(|e| format!("Failed to write snippets file: {}", e))?;
+    Ok(())
+}
+
+fn save_servers(app_dir: &PathBuf, servers: &Vec<ServerConnection>) -> Result<(), String> {
+    let path = get_servers_path(app_dir);
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("Invalid path for servers file"))?;
+    fs::create_dir_all(parent)
+        .map_err(|e| format!("Failed to create app data directory: {}", e))?;
+    let content = serde_json::to_string_pretty(servers)
+        .map_err(|e| format!("Failed to serialize servers: {}", e))?;
+    fs::write(&path, content).map_err(|e| format!("Failed to write servers file: {}", e))?;
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -113,6 +236,7 @@ impl Handler for SshClientHandler {
             sender: tx,
             key_type: key_type.clone(),
             fingerprint: fingerprint.clone(),
+            public_key_base64: public_key_base64.clone(),
         };
 
         let state = self.app.state::<AppState>();
@@ -149,9 +273,78 @@ pub struct ServerConnection {
     pub auth: AuthMethod,
 }
 
+fn keyring_service_name() -> String {
+    "com.ssh-thing".to_string()
+}
+
+fn put_secret(_app: &AppHandle, secret_id: &str, secret: &str) -> Result<(), String> {
+    let entry = Entry::new(&keyring_service_name(), secret_id)
+        .map_err(|e| format!("keyring entry failed: {}", e))?;
+    entry
+        .set_password(secret)
+        .map_err(|e| format!("keyring set failed: {}", e))?;
+    Ok(())
+}
+
+fn get_secret(_app: &AppHandle, secret_id: &str) -> Result<String, String> {
+    let entry = Entry::new(&keyring_service_name(), secret_id)
+        .map_err(|e| format!("keyring entry failed: {}", e))?;
+    entry
+        .get_password()
+        .map_err(|e| format!("keyring get failed: {}", e))
+}
+
+fn delete_secret(_app: &AppHandle, secret_id: &str) -> Result<(), String> {
+    let entry = Entry::new(&keyring_service_name(), secret_id)
+        .map_err(|e| format!("keyring entry failed: {}", e))?;
+    entry
+        .delete_password()
+        .map_err(|e| format!("keyring delete failed: {}", e))
+}
+
+fn migrate_server_auth(app: &AppHandle, server: &mut ServerConnection) -> Result<(), String> {
+    match &server.auth {
+        AuthMethod::SecretRef { .. } => Ok(()),
+        AuthMethod::Password { password } => {
+            let secret_id = format!("server:{}:password", server.id);
+            put_secret(app, &secret_id, password)?;
+            server.auth = AuthMethod::SecretRef {
+                secret_id,
+                kind: SecretKind::Password,
+            };
+            Ok(())
+        }
+        AuthMethod::Key { private_key } => {
+            let secret_id = format!("server:{}:private_key", server.id);
+            put_secret(app, &secret_id, private_key)?;
+            server.auth = AuthMethod::SecretRef {
+                secret_id,
+                kind: SecretKind::PrivateKey,
+            };
+            Ok(())
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SecretKind {
+    Password,
+    PrivateKey,
+}
+
+fn default_secret_kind() -> SecretKind {
+    SecretKind::Password
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum AuthMethod {
+    SecretRef {
+        secret_id: String,
+        #[serde(default = "default_secret_kind")]
+        kind: SecretKind,
+    },
+    // Legacy shapes kept for migration
     Password { password: String },
     Key { private_key: String },
 }
@@ -178,11 +371,6 @@ pub struct Snippet {
     pub name: String,
     pub command: String,
     pub description: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct SnippetsToml {
-    snippets: Vec<Snippet>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -645,6 +833,7 @@ struct PendingHostKey {
     sender: oneshot::Sender<bool>,
     key_type: String,
     fingerprint: String,
+    public_key_base64: String,
 }
 
 pub async fn connect_ssh(
@@ -659,6 +848,10 @@ pub async fn connect_ssh(
 
     #[cfg(debug_assertions)]
     let auth_type = match auth {
+        AuthMethod::SecretRef { kind, .. } => match kind {
+            SecretKind::Password => "password",
+            SecretKind::PrivateKey => "key",
+        },
         AuthMethod::Password { .. } => "password",
         AuthMethod::Key { .. } => "key",
     };
@@ -692,6 +885,74 @@ pub async fn connect_ssh(
         })?;
 
     match auth {
+        AuthMethod::SecretRef { secret_id, kind } => match kind {
+            SecretKind::Password => {
+                let password = get_secret(app, secret_id)?;
+                let auth_result = session
+                    .authenticate_password(user, &password)
+                    .await
+                    .map_err(|e| {
+                        let _ = emit_connection_state(
+                            app,
+                            server_id,
+                            None,
+                            ConnectionState::Error(format!("Authentication failed: {}", e)),
+                        );
+                        format!("Authentication failed: {}", e)
+                    })?;
+
+                if !auth_result {
+                    let _ = emit_connection_state(
+                        app,
+                        server_id,
+                        None,
+                        ConnectionState::Error("Password authentication failed".to_string()),
+                    );
+                    return Err("Password authentication failed".to_string());
+                }
+
+                #[cfg(debug_assertions)]
+                debug!(user, "Authenticated with secret ref (password)");
+            }
+            SecretKind::PrivateKey => {
+                let key_data = get_secret(app, secret_id)?;
+                let key_pair = keys::decode_secret_key(&key_data, None).map_err(|e| {
+                    let _ = emit_connection_state(
+                        app,
+                        server_id,
+                        None,
+                        ConnectionState::Error(format!("Failed to decode private key: {}", e)),
+                    );
+                    format!("Failed to decode private key: {}", e)
+                })?;
+
+                let auth_result = session
+                    .authenticate_publickey(user, Arc::new(key_pair))
+                    .await
+                    .map_err(|e| {
+                        let _ = emit_connection_state(
+                            app,
+                            server_id,
+                            None,
+                            ConnectionState::Error(format!("Key authentication failed: {}", e)),
+                        );
+                        format!("Key authentication failed: {}", e)
+                    })?;
+
+                if !auth_result {
+                    let _ = emit_connection_state(
+                        app,
+                        server_id,
+                        None,
+                        ConnectionState::Error("Key authentication failed".to_string()),
+                    );
+                    return Err("Key authentication failed".to_string());
+                }
+
+                #[cfg(debug_assertions)]
+                debug!(user, "Authenticated with secret ref (key)");
+            }
+        },
         AuthMethod::Password { password } => {
             #[cfg(debug_assertions)]
             debug!(user, "Authenticating with password");
@@ -914,8 +1175,8 @@ pub async fn open_pty_shell(
         }
         let _ = emit_connection_state(
             &app_for_task,
-            Some(&server_id_for_task),
-            Some(&shell_id_for_task),
+            Some(server_id_for_task.as_str()),
+            Some(shell_id_for_task.as_str()),
             ConnectionState::Disconnected,
         );
     });
@@ -967,175 +1228,55 @@ fn save_known_hosts(app_dir: &PathBuf, hosts: &[KnownHost]) -> Result<(), String
     Ok(())
 }
 
-fn load_servers(app_dir: &PathBuf) -> Result<Vec<ServerConnection>, String> {
+fn load_servers(app_dir: &PathBuf, app: &AppHandle) -> Result<Vec<ServerConnection>, String> {
     let path = get_servers_path(app_dir);
     if !path.exists() {
         return Ok(Vec::new());
     }
-    let content =
-        fs::read_to_string(&path).map_err(|e| format!("Failed to read servers file: {}", e))?;
-    serde_json::from_str(&content).map_err(|e| format!("Failed to parse servers file: {}", e))
-}
+    let data = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read servers file: {}", e))?;
+    let mut servers: Vec<ServerConnection> = serde_json::from_str(&data)
+        .map_err(|e| format!("Failed to deserialize servers: {}", e))?;
 
-fn save_servers(app_dir: &PathBuf, servers: &[ServerConnection]) -> Result<(), String> {
-    let path = get_servers_path(app_dir);
-    let parent = path
-        .parent()
-        .ok_or_else(|| format!("Invalid path for servers file"))?;
-    fs::create_dir_all(parent)
-        .map_err(|e| format!("Failed to create app data directory: {}", e))?;
-    let content = serde_json::to_string_pretty(servers)
-        .map_err(|e| format!("Failed to serialize servers: {}", e))?;
-    fs::write(&path, content).map_err(|e| format!("Failed to write servers file: {}", e))?;
-    Ok(())
-}
-
-fn get_snippets_path(app_dir: &PathBuf) -> PathBuf {
-    app_dir.join(SNIPPETS_FILE)
-}
-
-fn get_snippets_toml_path(app_dir: &PathBuf) -> PathBuf {
-    app_dir.join(SNIPPETS_TOML_FILE)
-}
-
-fn load_snippets(app_dir: &PathBuf) -> Result<Vec<Snippet>, String> {
-    let toml_path = get_snippets_toml_path(app_dir);
-    let json_path = get_snippets_path(app_dir);
-
-    if toml_path.exists() {
-        let content = fs::read_to_string(&toml_path)
-            .map_err(|e| format!("Failed to read snippets TOML file: {}", e))?;
-        let toml_data: SnippetsToml = toml::from_str(&content)
-            .map_err(|e| format!("Failed to parse snippets TOML file: {}", e))?;
-        return Ok(toml_data.snippets);
+    // Migrate any plaintext secrets into keyring
+    let mut changed = false;
+    for server in servers.iter_mut() {
+        if let AuthMethod::SecretRef { .. } = server.auth {
+            continue;
+        }
+        migrate_server_auth(app, server)?;
+        changed = true;
     }
 
-    if !json_path.exists() {
-        return Ok(Vec::new());
+    if changed {
+        save_servers(app_dir, &servers)?;
     }
-    let content = fs::read_to_string(&json_path)
-        .map_err(|e| format!("Failed to read snippets file: {}", e))?;
-    serde_json::from_str(&content).map_err(|e| format!("Failed to parse snippets file: {}", e))
-}
 
-fn save_snippets(app_dir: &PathBuf, snippets: &[Snippet]) -> Result<(), String> {
-    let toml_path = get_snippets_toml_path(app_dir);
-    let parent = toml_path
-        .parent()
-        .ok_or_else(|| format!("Invalid path for snippets file"))?;
-    fs::create_dir_all(parent)
-        .map_err(|e| format!("Failed to create app data directory: {}", e))?;
-    let toml_data = SnippetsToml {
-        snippets: snippets.to_vec(),
-    };
-    let content = toml::to_string_pretty(&toml_data)
-        .map_err(|e| format!("Failed to serialize snippets to TOML: {}", e))?;
-    fs::write(&toml_path, content)
-        .map_err(|e| format!("Failed to write snippets TOML file: {}", e))?;
-    Ok(())
-}
-
-fn current_unix_timestamp() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .unwrap_or(0)
-}
-
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
-#[tauri::command]
-async fn get_servers(app: AppHandle) -> Result<Vec<ServerConnection>, String> {
-    let app_dir = get_app_dir(&app)?;
-    load_servers(&app_dir)
-}
-
-#[tauri::command]
-async fn add_server(
-    app: AppHandle,
-    server: ServerConnection,
-) -> Result<Vec<ServerConnection>, String> {
-    let app_dir = get_app_dir(&app)?;
-    let mut servers = load_servers(&app_dir)?;
-    servers.push(server);
-    save_servers(&app_dir, &servers)?;
     Ok(servers)
 }
 
 #[tauri::command]
-async fn trust_host_key(
+async fn upsert_secret(
     app: AppHandle,
-    host: String,
-    port: u16,
-    key_type: String,
-    fingerprint: String,
-    public_key_base64: String,
-) -> Result<(), String> {
-    let app_dir = get_app_dir(&app)?;
-    let mut known_hosts = load_known_hosts(&app_dir)?;
-
-    if let Some(existing) = known_hosts
-        .iter_mut()
-        .find(|entry| entry.host == host && entry.port == port)
-    {
-        existing.key_type = key_type.clone();
-        existing.fingerprint = fingerprint.clone();
-        existing.public_key_base64 = public_key_base64.clone();
-        existing.added_at = current_unix_timestamp();
-    } else {
-        known_hosts.push(KnownHost {
-            host: host.clone(),
-            port,
-            key_type: key_type.clone(),
-            fingerprint: fingerprint.clone(),
-            public_key_base64: public_key_base64.clone(),
-            added_at: current_unix_timestamp(),
-        });
-    }
-
-    save_known_hosts(&app_dir, &known_hosts)?;
-
-    let state = app.state::<AppState>();
-    let mut pending_map = state.pending_host_keys.lock().await;
-    let key = format!("{}:{}", host, port);
-    if let Some(pending) = pending_map.remove(&key) {
-        if pending.fingerprint != fingerprint || pending.key_type != key_type {
-            let _ = pending.sender.send(false);
-            return Err("Pending host key does not match trusted key".to_string());
-        }
-        let _ = pending.sender.send(true);
-    }
-
-    Ok(())
+    secret_id: Option<String>,
+    secret: String,
+    kind: SecretKind,
+) -> Result<String, String> {
+    // kind is included for future use (password vs key) even though keyring storage is the same
+    let _ = kind;
+    let id = secret_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    put_secret(&app, &id, &secret)?;
+    // storing kind is implicit in the calling AuthMethod
+    Ok(id)
 }
 
 #[tauri::command]
-async fn reject_host_key(app: AppHandle, host: String, port: u16) -> Result<(), String> {
-    let state = app.state::<AppState>();
-    let mut pending_map = state.pending_host_keys.lock().await;
-    let key = format!("{}:{}", host, port);
-    if let Some(pending) = pending_map.remove(&key) {
-        let _ = pending.sender.send(false);
-    }
-    Ok(())
-}
-
-#[tauri::command]
-async fn update_server(
-    app: AppHandle,
-    id: String,
-    server: ServerConnection,
-) -> Result<Vec<ServerConnection>, String> {
+async fn add_server(app: AppHandle, server: ServerConnection) -> Result<Vec<ServerConnection>, String> {
     let app_dir = get_app_dir(&app)?;
-    let mut servers = load_servers(&app_dir)?;
-    let index = servers
-        .iter()
-        .position(|s| s.id == id)
-        .ok_or_else(|| format!("Server with id {} not found", id))?;
-    servers[index] = server;
+    let mut servers = load_servers(&app_dir, &app)?;
+    let mut server = server;
+    migrate_server_auth(&app, &mut server)?;
+    servers.push(server);
     save_servers(&app_dir, &servers)?;
     Ok(servers)
 }
@@ -1143,11 +1284,16 @@ async fn update_server(
 #[tauri::command]
 async fn delete_server(app: AppHandle, id: String) -> Result<Vec<ServerConnection>, String> {
     let app_dir = get_app_dir(&app)?;
-    let mut servers = load_servers(&app_dir)?;
+    let mut servers = load_servers(&app_dir, &app)?;
     let index = servers
         .iter()
         .position(|s| s.id == id)
         .ok_or_else(|| format!("Server with id {} not found", id))?;
+
+    if let AuthMethod::SecretRef { secret_id, .. } = &servers[index].auth {
+        let _ = delete_secret(&app, secret_id);
+    }
+
     servers.remove(index);
     save_servers(&app_dir, &servers)?;
     Ok(servers)
@@ -1319,6 +1465,7 @@ pub fn run() {
             add_snippet,
             update_snippet,
             delete_snippet,
+            upsert_secret,
             trust_host_key,
             reject_host_key,
             connect,
