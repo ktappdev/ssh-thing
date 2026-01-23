@@ -12,7 +12,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use keyring::Entry;
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::time::{timeout, Duration};
-use tracing::debug;
+use tracing::{debug, info};
 
 const SERVERS_FILE: &str = "servers.json";
 const SNIPPETS_FILE: &str = "snippets.json";
@@ -1169,7 +1169,7 @@ pub async fn open_pty_shell(
                             }
                         }
                         Some(ShellCommand::Resize(width, height)) => {
-                            if let Err(_e) = channel_for_task.window_change(width, height, 0, 0).await {
+                            if let Err(e) = channel_for_task.window_change(width, height, 0, 0).await {
                                 #[cfg(debug_assertions)]
                                 debug!(
                                     shell_id = %shell_id_for_task,
