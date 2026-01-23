@@ -1,14 +1,13 @@
-# Tauri + Vanilla
+# SSH Thing
 
-This template should help get you started developing with Tauri in vanilla HTML, CSS and Javascript.
+SSH Thing is a cross-platform desktop SSH client built with Tauri, a Rust backend, and a vanilla HTML/JS frontend. It focuses on quick connections, clear session state, and a straightforward terminal experience, with small, fast binaries and minimal overhead.
 
-## Recommended IDE Setup
+![SSH Thing screenshot](./screen1.png)
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
-# ssh-thing
+### Highlights
+- Manage multiple saved servers with nicknames, users, and ports.
+- One-click connect/disconnect with clear status indicators.
+- Built-in host key prompts and basic credential storage.
+- Simple, keyboard-friendly terminal view for everyday SSH tasks.
 
-## macOS install (Gatekeeper)
-
-If macOS blocks the app because it’s from an unidentified developer, you can still run it.
-
-See: `MACOS_INSTALL.md`
+Have feature ideas or requests? Please open an issue in the **Issues** tab.

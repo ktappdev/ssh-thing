@@ -5,7 +5,7 @@ use russh::keys::PublicKeyBase64;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
@@ -109,11 +109,11 @@ async fn reject_host_key(app: AppHandle, host: String, port: u16) -> Result<(), 
     Ok(())
 }
 
-fn get_snippets_path(app_dir: &PathBuf) -> PathBuf {
+fn get_snippets_path(app_dir: &Path) -> PathBuf {
     app_dir.join(SNIPPETS_FILE)
 }
 
-fn load_snippets(app_dir: &PathBuf) -> Result<Vec<Snippet>, String> {
+fn load_snippets(app_dir: &Path) -> Result<Vec<Snippet>, String> {
     let path = get_snippets_path(app_dir);
     if !path.exists() {
         return Ok(Vec::new());
@@ -123,11 +123,11 @@ fn load_snippets(app_dir: &PathBuf) -> Result<Vec<Snippet>, String> {
     serde_json::from_str(&data).map_err(|e| format!("Failed to parse snippets file: {}", e))
 }
 
-fn save_snippets(app_dir: &PathBuf, snippets: &Vec<Snippet>) -> Result<(), String> {
+fn save_snippets(app_dir: &Path, snippets: &Vec<Snippet>) -> Result<(), String> {
     let path = get_snippets_path(app_dir);
     let parent = path
         .parent()
-        .ok_or_else(|| format!("Invalid path for snippets file"))?;
+        .ok_or_else(|| "Invalid path for snippets file".to_string())?;
     fs::create_dir_all(parent)
         .map_err(|e| format!("Failed to create app data directory: {}", e))?;
     let content = serde_json::to_string_pretty(snippets)
@@ -136,11 +136,11 @@ fn save_snippets(app_dir: &PathBuf, snippets: &Vec<Snippet>) -> Result<(), Strin
     Ok(())
 }
 
-fn save_servers(app_dir: &PathBuf, servers: &Vec<ServerConnection>) -> Result<(), String> {
+fn save_servers(app_dir: &Path, servers: &Vec<ServerConnection>) -> Result<(), String> {
     let path = get_servers_path(app_dir);
     let parent = path
         .parent()
-        .ok_or_else(|| format!("Invalid path for servers file"))?;
+        .ok_or_else(|| "Invalid path for servers file".to_string())?;
     fs::create_dir_all(parent)
         .map_err(|e| format!("Failed to create app data directory: {}", e))?;
     let content = serde_json::to_string_pretty(servers)
@@ -1205,11 +1205,11 @@ pub async fn open_pty_shell(
     Ok(shell)
 }
 
-fn get_servers_path(app_dir: &PathBuf) -> PathBuf {
+fn get_servers_path(app_dir: &Path) -> PathBuf {
     app_dir.join(SERVERS_FILE)
 }
 
-fn get_known_hosts_path(app_dir: &PathBuf) -> PathBuf {
+fn get_known_hosts_path(app_dir: &Path) -> PathBuf {
     app_dir.join(KNOWN_HOSTS_FILE)
 }
 
@@ -1219,7 +1219,7 @@ fn get_app_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("Failed to get app data directory: {}", e))
 }
 
-fn load_known_hosts(app_dir: &PathBuf) -> Result<Vec<KnownHost>, String> {
+fn load_known_hosts(app_dir: &Path) -> Result<Vec<KnownHost>, String> {
     let path = get_known_hosts_path(app_dir);
     if !path.exists() {
         return Ok(Vec::new());
@@ -1230,11 +1230,11 @@ fn load_known_hosts(app_dir: &PathBuf) -> Result<Vec<KnownHost>, String> {
         .map_err(|e| format!("Failed to parse known hosts file: {}", e))
 }
 
-fn save_known_hosts(app_dir: &PathBuf, hosts: &[KnownHost]) -> Result<(), String> {
+fn save_known_hosts(app_dir: &Path, hosts: &[KnownHost]) -> Result<(), String> {
     let path = get_known_hosts_path(app_dir);
     let parent = path
         .parent()
-        .ok_or_else(|| format!("Invalid path for known hosts file"))?;
+        .ok_or_else(|| "Invalid path for known hosts file".to_string())?;
     fs::create_dir_all(parent)
         .map_err(|e| format!("Failed to create app data directory: {}", e))?;
     let content = serde_json::to_string_pretty(hosts)
@@ -1243,7 +1243,7 @@ fn save_known_hosts(app_dir: &PathBuf, hosts: &[KnownHost]) -> Result<(), String
     Ok(())
 }
 
-fn load_servers(app_dir: &PathBuf, app: &AppHandle) -> Result<Vec<ServerConnection>, String> {
+fn load_servers(app_dir: &Path, app: &AppHandle) -> Result<Vec<ServerConnection>, String> {
     let path = get_servers_path(app_dir);
     if !path.exists() {
         return Ok(Vec::new());
