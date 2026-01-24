@@ -59,6 +59,18 @@ function getActiveSession() {
   return activeSessionId ? sessions.get(activeSessionId) : null;
 }
 
+function focusActiveTerminal({ defer = false } = {}) {
+  const session = getActiveSession();
+  const term = session?.term;
+  if (!term) return;
+  const focusFn = () => term.focus();
+  if (defer) {
+    requestAnimationFrame(focusFn);
+  } else {
+    focusFn();
+  }
+}
+
 function getSessionByShellId(shellId) {
   if (!shellId) return null;
   for (const session of sessions.values()) {
@@ -232,6 +244,7 @@ function setActiveSession(sessionId) {
   }
   updateStatusBarForActiveSession();
   updateSessionTabs();
+  focusActiveTerminal({ defer: true });
 }
 
 function updateSessionTabs() {
@@ -1242,6 +1255,7 @@ function toggleFocusMode() {
           active.fitAddon.fit();
           syncPtySize(active);
         }
+        focusActiveTerminal();
     }, 300);
 }
 
