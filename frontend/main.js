@@ -74,9 +74,33 @@ function getSessionByServerId(serverId) {
 
 function writeToSessionTerminal(session, output) {
   if (!session?.term) return;
-  session.term.write(output);
-  if (session.autoScrollEnabled) {
-    session.term.scrollToBottom();
+  
+  // Create a buffer for batching output if it doesn't exist
+  if (!session.outputBuffer) {
+    session.outputBuffer = '';
+    session.outputTimeout = null;
+    
+    // Flush buffer every 16ms (60fps) for smoother, more responsive feel
+    const flushBuffer = () => {
+      if (session.outputBuffer) {
+        session.term.write(session.outputBuffer);
+        if (session.autoScrollEnabled) {
+          session.term.scrollToBottom();
+        }
+        session.outputBuffer = '';
+      }
+      session.outputTimeout = null;
+    };
+    
+    session.flushBuffer = flushBuffer;
+  }
+  
+  // Add output to buffer
+  session.outputBuffer += output;
+  
+  // Schedule flush if not already scheduled - reduced from 50ms to 16ms
+  if (!session.outputTimeout) {
+    session.outputTimeout = setTimeout(session.flushBuffer, 16);
   }
 }
 
@@ -115,6 +139,11 @@ function createTerminalPane(sessionId) {
     fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
     fontSize: 14,
     theme: getTerminalTheme(),
+    // Performance optimizations
+    scrollback: 1000,
+    fastScrollModifier: 'alt',
+    rightClickSelectsWord: true,
+    rendererType: 'dom', // Use DOM renderer for better performance
   });
 
   const paneFitAddon = new FitAddon.FitAddon();
@@ -129,10 +158,11 @@ function createTerminalPane(sessionId) {
     termInstance.writeln("\x1b[1;32mConnecting...\x1b[0m\r\n");
   }
 
-  // Hook events per session
+  // Optimized input handling - send immediately for maximum responsiveness
   termInstance.onData((data) => {
     const session = sessions.get(sessionId);
     if (session && session.shellId && session.connectionState.type === "Connected") {
+      // Send immediately without await for maximum responsiveness
       invoke("send_input", { shellId: session.shellId, input: data }).catch(console.error);
     }
   });
