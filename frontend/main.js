@@ -1477,11 +1477,7 @@ window.addEventListener("DOMContentLoaded", () => {
     if (!pendingHostKey) return;
     try {
       await invoke("trust_host_key", {
-        host: pendingHostKey.host,
-        port: pendingHostKey.port,
-        keyType: pendingHostKey.key_type,
-        fingerprint: pendingHostKey.fingerprint,
-        publicKeyBase64: pendingHostKey.public_key_base64,
+        id: pendingHostKey.id,
       });
       logConnectionEvent("Host key trusted", `${pendingHostKey.host}:${pendingHostKey.port}`, "success");
     } catch (error) {
@@ -1497,8 +1493,7 @@ window.addEventListener("DOMContentLoaded", () => {
     if (!pendingHostKey) return;
     try {
       await invoke("reject_host_key", {
-        host: pendingHostKey.host,
-        port: pendingHostKey.port,
+        id: pendingHostKey.id,
       });
       logConnectionEvent("Host key rejected", `${pendingHostKey.host}:${pendingHostKey.port}`, "warning");
       showAlert("Host Key Rejected", "Connection aborted by user.", "warning");

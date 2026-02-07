@@ -59,13 +59,12 @@ async fn update_server(
 }
 
 #[tauri::command]
-async fn trust_host_key(app: AppHandle, host: String, port: u16) -> Result<(), String> {
-    let host_key_id = format!("{}:{}", host, port);
+async fn trust_host_key(app: AppHandle, id: String) -> Result<(), String> {
     let state = app.state::<AppState>();
 
     let pending = {
         let mut pending_map = state.pending_host_keys.lock().await;
-        pending_map.remove(&host_key_id)
+        pending_map.remove(&id)
     };
 
     let Some(pending) = pending else {
@@ -76,6 +75,10 @@ async fn trust_host_key(app: AppHandle, host: String, port: u16) -> Result<(), S
 
     let app_dir = get_app_dir(&app)?;
     let mut hosts = load_known_hosts(&app_dir)?;
+    // Use values from the pending struct, not arguments
+    let host = pending.host;
+    let port = pending.port;
+    
     hosts.retain(|h| !(h.host == host && h.port == port));
     let added_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -93,13 +96,12 @@ async fn trust_host_key(app: AppHandle, host: String, port: u16) -> Result<(), S
 }
 
 #[tauri::command]
-async fn reject_host_key(app: AppHandle, host: String, port: u16) -> Result<(), String> {
-    let host_key_id = format!("{}:{}", host, port);
+async fn reject_host_key(app: AppHandle, id: String) -> Result<(), String> {
     let state = app.state::<AppState>();
 
     let pending = {
         let mut pending_map = state.pending_host_keys.lock().await;
-        pending_map.remove(&host_key_id)
+        pending_map.remove(&id)
     };
 
     if let Some(pending) = pending {
@@ -193,7 +195,6 @@ impl Handler for SshClientHandler {
         let key_type = server_public_key.name().to_string();
         let fingerprint = server_public_key.fingerprint();
         let public_key_base64 = server_public_key.public_key_base64();
-        let host_key_id = format!("{}:{}", self.host, self.port);
         let server_id = self.server_id.as_deref();
 
         let app_dir = match get_app_dir(&self.app) {
@@ -233,8 +234,11 @@ impl Handler for SshClientHandler {
         }
 
         let (tx, rx) = oneshot::channel();
+        let request_id = uuid::Uuid::new_v4().to_string();
         let pending = PendingHostKey {
             sender: tx,
+            host: self.host.clone(),
+            port: self.port,
             key_type: key_type.clone(),
             fingerprint: fingerprint.clone(),
             public_key_base64: public_key_base64.clone(),
@@ -243,10 +247,11 @@ impl Handler for SshClientHandler {
         let state = self.app.state::<AppState>();
         {
             let mut pending_map = state.pending_host_keys.lock().await;
-            pending_map.insert(host_key_id.clone(), pending);
+            pending_map.insert(request_id.clone(), pending);
         }
 
         let prompt = HostKeyPrompt {
+            id: request_id.clone(),
             host: self.host.clone(),
             port: self.port,
             key_type,
@@ -259,7 +264,7 @@ impl Handler for SshClientHandler {
 
         let state = self.app.state::<AppState>();
         let mut pending_map = state.pending_host_keys.lock().await;
-        pending_map.remove(&host_key_id);
+        pending_map.remove(&request_id);
 
         Ok(decision)
     }
@@ -394,6 +399,7 @@ pub struct KnownHost {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HostKeyPrompt {
+    pub id: String,
     pub host: String,
     pub port: u16,
     pub key_type: String,
@@ -839,6 +845,8 @@ struct AppState {
 
 struct PendingHostKey {
     sender: oneshot::Sender<bool>,
+    host: String,
+    port: u16,
     key_type: String,
     fingerprint: String,
     public_key_base64: String,
