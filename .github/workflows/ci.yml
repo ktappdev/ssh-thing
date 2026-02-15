@@ -3,6 +3,7 @@ name: Cross-Platform CI
 on:
   push:
     branches: [main, master]
+    tags-ignore: ['v*']
   pull_request:
     branches: [main, master]
 
