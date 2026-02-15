@@ -1083,12 +1083,17 @@ function renderSnippetList() {
 
   snippets.forEach((snippet) => {
     const div = document.createElement("div");
-    div.className = "snippet-item bg-white dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700/80 rounded-lg px-3 py-2.5 shadow-sm group flex items-center gap-3";
+    div.className = "snippet-item bg-white dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700/80 rounded-lg px-3 py-2.5 shadow-sm group flex items-center gap-3 relative";
+    
+    const firstPart = snippet.command.split('&&')[0].trim();
+    const displayCommand = firstPart.length > 28 ? firstPart.substring(0, 28) + '...' : firstPart;
+    const hasMore = snippet.command.includes('&&') || snippet.command.length > 28;
+    
     div.innerHTML = `
       <div class="w-2 h-2 rounded-full bg-blue-400 dark:bg-blue-500/60 flex-shrink-0"></div>
       <div class="min-w-0 flex-1">
         <div class="server-card-name truncate">${snippet.name}</div>
-        <div class="server-card-subtitle font-mono truncate text-blue-600/70 dark:text-blue-400/70">${snippet.command}</div>
+        <div class="server-card-subtitle font-mono truncate text-blue-600/70 dark:text-blue-400/70">${displayCommand}${hasMore ? ' <span class="text-gray-400 dark:text-gray-500">+more</span>' : ''}</div>
       </div>
       <div class="server-actions flex gap-1 flex-shrink-0">
         <button class="server-action-btn snippet-edit-btn" data-id="${snippet.id}" title="Edit">
@@ -1102,7 +1107,17 @@ function renderSnippetList() {
         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
         Run
       </button>
+      <div class="snippet-tooltip hidden absolute left-0 right-0 top-full mt-1 z-50 bg-gray-900 dark:bg-gray-700 text-white text-xs font-mono p-3 rounded-lg shadow-lg whitespace-pre-wrap break-all max-h-48 overflow-y-auto">${snippet.command}</div>
     `;
+    
+    const tooltip = div.querySelector('.snippet-tooltip');
+    div.addEventListener('mouseenter', () => {
+      tooltip.classList.remove('hidden');
+    });
+    div.addEventListener('mouseleave', () => {
+      tooltip.classList.add('hidden');
+    });
+    
     listEl.appendChild(div);
   });
 }
