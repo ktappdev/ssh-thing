@@ -57,14 +57,21 @@ jobs:
         working-directory: ./src-tauri
         run: cargo tauri build --target x86_64-pc-windows-msvc
 
+      - name: List built artifacts (Windows)
+        run: |
+          ls -R src-tauri/target || true
+          ls -R src-tauri/target/x86_64-pc-windows-msvc || true
+
       - name: Upload Windows installer to GitHub Release
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ github.ref_name }}
+          fail_on_unmatched_files: true
           files: |
             src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/msi/*.msi
 
   build-macos:
     name: Build macOS (.dmg)
@@ -94,11 +101,18 @@ jobs:
         working-directory: ./src-tauri
         run: cargo tauri build --target aarch64-apple-darwin
 
+      - name: List built artifacts (macOS)
+        run: |
+          ls -R src-tauri/target || true
+          ls -R src-tauri/target/aarch64-apple-darwin || true
+
       - name: Upload macOS installer to GitHub Release
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ github.ref_name }}
+          fail_on_unmatched_files: true
           files: |
             src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/dmg/*.dmg
