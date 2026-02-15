@@ -877,7 +877,11 @@ pub async fn connect_ssh(
 
     emit_connection_state(app, server_id, None, ConnectionState::Connecting)?;
 
-    let config = Arc::new(Config::default());
+    let config = Arc::new(Config {
+        keepalive_interval: Some(Duration::from_secs(15)),
+        keepalive_max: 3,
+        ..Config::default()
+    });
 
     #[cfg(debug_assertions)]
     debug!(%addr, "Establishing TCP connection");

@@ -603,115 +603,129 @@ function renderServerList() {
     return;
   }
 
+  const connectedServers = [];
+  const otherServers = [];
+
   filteredServers.forEach((server) => {
     const session = sessions.get(server.id);
     const connectionState = session?.connectionState || { type: "Disconnected" };
+    const isConnected = connectionState.type === "Connected";
+    const isConnecting = connectionState.type === "Connecting";
+    
+    if (isConnected || isConnecting) {
+      connectedServers.push({ server, session, connectionState });
+    } else {
+      otherServers.push({ server, session, connectionState });
+    }
+  });
+
+  function createServerCard(server, connectionState) {
+    const session = sessions.get(server.id);
     const isActive = activeSessionId === server.id;
     const isConnected = connectionState.type === "Connected";
     const isConnecting = connectionState.type === "Connecting";
     const isErrored = connectionState.type === "Error";
-    const isDisconnected = connectionState.type === "Disconnected";
     
     const div = document.createElement("div");
-    div.className = `server-item bg-white dark:bg-[#1f2335] border ${isActive ? 'border-blue-400' : 'border-gray-200 dark:border-gray-700'} rounded-2xl p-4 shadow-lg hover:shadow-xl transition-all group flex flex-col gap-3`;
     
-    // Determine auth type label
-    let authLabel = "Key";
-    if (server.auth.type === 'Password' || (server.auth.type === 'SecretRef' && server.auth.kind === 'Password')) {
-        authLabel = "Password";
+    let statusClass = "";
+    if (isActive && isConnected) {
+      statusClass = "status-active";
+    } else if (isConnected) {
+      statusClass = "status-connected";
+    } else if (isConnecting) {
+      statusClass = "status-connecting";
+    } else if (isErrored) {
+      statusClass = "status-error";
     }
+    
+    div.className = `server-item bg-white dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700/80 rounded-lg px-3 py-2.5 shadow-sm group flex items-center gap-3 cursor-pointer ${statusClass}`;
 
     const displayName = server.nickname && server.nickname.trim().length > 0 ? server.nickname : `${server.user}@${server.host}`;
-    const subtitle = server.nickname && server.nickname.trim().length > 0 ? `${server.user}@${server.host}` : `Port ${server.port}`;
+    const subtitle = server.nickname && server.nickname.trim().length > 0 ? `${server.user}@${server.host}` : `:${server.port}`;
 
-    // Connection status dot
     let statusDot = "";
-    let statusText = "";
     switch (connectionState.type) {
       case "Connecting":
-        statusDot = '<div class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></div>';
-        statusText = "Connecting";
+        statusDot = '<div class="w-2 h-2 rounded-full bg-amber-500 animate-pulse flex-shrink-0"></div>';
         break;
       case "Connected":
-        statusDot = '<div class="w-2 h-2 rounded-full bg-green-500"></div>';
-        statusText = isActive ? "Active" : "Connected";
+        statusDot = '<div class="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"></div>';
         break;
       case "Error":
-        statusDot = '<div class="w-2 h-2 rounded-full bg-red-500"></div>';
-        statusText = "Error";
+        statusDot = '<div class="w-2 h-2 rounded-full bg-red-500 flex-shrink-0"></div>';
         break;
       default:
-        statusDot = '<div class="w-2 h-2 rounded-full bg-gray-400"></div>';
-        statusText = "Disconnected";
+        statusDot = '<div class="w-2 h-2 rounded-full bg-gray-400 dark:bg-gray-500 flex-shrink-0"></div>';
     }
 
-    let statusBadge = "";
     let buttonLabel = "Connect";
-    let buttonClass = "bg-emerald-500 hover:bg-emerald-600";
+    let buttonClass = "ghost-btn-success";
     let buttonIcon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>';
     if (isConnected) {
-      statusBadge = '<span class="inline-flex items-center px-2.5 py-0.5 text-[10px] font-semibold rounded-full bg-green-600 text-white leading-tight shadow-sm">Connected</span>';
       buttonLabel = "Disconnect";
-      buttonClass = "bg-rose-600 hover:bg-rose-700 focus:ring-2 focus:ring-rose-300";
+      buttonClass = "ghost-btn-danger";
       buttonIcon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>';
     } else if (isConnecting) {
-      statusBadge = '<span class="inline-flex items-center px-2.5 py-0.5 text-[10px] font-semibold rounded-full bg-yellow-500 text-white leading-tight">Connecting</span>';
-      buttonLabel = "Connecting";
-      buttonClass = "bg-yellow-500 hover:bg-yellow-600";
-    } else if (isErrored || isDisconnected) {
-      statusBadge = '<span class="inline-flex items-center px-2.5 py-0.5 text-[10px] font-semibold rounded-full bg-amber-500 text-white leading-tight">Offline</span>';
-      buttonLabel = "Connect";
-      buttonClass = "bg-emerald-500 hover:bg-emerald-600";
+      buttonLabel = "...";
+      buttonClass = "";
+      buttonIcon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>';
     }
 
     div.innerHTML = `
-      <div class="flex justify-between items-start gap-3">
-        <div class="font-medium text-gray-900 dark:text-gray-100 truncate pr-2 flex flex-col gap-1" title="${displayName}">
-            <div class="flex items-center gap-2 flex-wrap">
-                ${statusDot}
-                <span class="text-blue-600 dark:text-blue-400 font-bold">${displayName}</span>
-                ${statusBadge}
-            </div>
-            <span class="text-xs text-gray-500 dark:text-gray-400">${subtitle}</span>
-        </div>
-        <div class="server-actions flex gap-1" style="z-index: 5;">
-            <button class="server-action-btn edit-btn" data-id="${server.id}" title="Edit">
-                <svg class="server-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
-            </button>
-            <button class="server-action-btn delete delete-btn" data-id="${server.id}" title="Delete">
-                <svg class="server-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-            </button>
+      <div class="flex items-center gap-2.5 min-w-0 flex-1">
+        ${statusDot}
+        <div class="min-w-0 flex-1">
+          <div class="server-card-name truncate">${displayName}</div>
+          <div class="server-card-subtitle truncate">${subtitle}</div>
         </div>
       </div>
-      <div class="flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
-        <div class="flex items-center gap-2">
-            <span class="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-[10px] font-mono border border-gray-200 dark:border-gray-600">:${server.port}</span>
-            <span class="flex items-center gap-1">
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
-                ${authLabel}
-            </span>
-        </div>
-        <button onclick="window.handleCardDisconnect?.('${server.id}')" class="connect-btn ${buttonClass} text-white px-4 py-2 rounded-lg shadow-sm hover:shadow transition-all font-semibold flex items-center gap-2" data-id="${server.id}">
-            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">${buttonIcon}</svg>
-            ${buttonLabel}
+      <div class="server-actions flex gap-1 flex-shrink-0">
+        <button class="server-action-btn edit-btn" data-id="${server.id}" title="Edit">
+          <svg class="server-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+        </button>
+        <button class="server-action-btn delete delete-btn" data-id="${server.id}" title="Delete">
+          <svg class="server-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
         </button>
       </div>
+      <button onclick="event.stopPropagation(); window.handleCardDisconnect?.('${server.id}')" class="ghost-btn ${buttonClass} flex-shrink-0" data-id="${server.id}">
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">${buttonIcon}</svg>
+        ${buttonLabel}
+      </button>
     `;
-    const actions = div.querySelector(".server-actions");
-    if (actions) {
-      div.addEventListener("mouseenter", () => {
-        actions.style.opacity = "1";
-        actions.style.visibility = "visible";
-        actions.style.pointerEvents = "auto";
-      });
-      div.addEventListener("mouseleave", () => {
-        actions.style.opacity = "0";
-        actions.style.visibility = "hidden";
-        actions.style.pointerEvents = "none";
-      });
-    }
-    listEl.appendChild(div);
-  });
+    
+    div.addEventListener("click", (e) => {
+      if (e.target.closest("button")) return;
+      if (isConnected) {
+        setActiveSession(server.id);
+      }
+    });
+
+    return div;
+  }
+
+  if (connectedServers.length > 0) {
+    const connectedLabel = document.createElement("div");
+    connectedLabel.className = "server-section-label";
+    connectedLabel.textContent = "Connected";
+    listEl.appendChild(connectedLabel);
+
+    connectedServers.forEach(({ server, connectionState }) => {
+      listEl.appendChild(createServerCard(server, connectionState));
+    });
+  }
+
+  if (otherServers.length > 0) {
+    const otherLabel = document.createElement("div");
+    otherLabel.className = "server-section-label";
+    otherLabel.textContent = connectedServers.length > 0 ? "Other Servers" : "Servers";
+    listEl.appendChild(otherLabel);
+
+    otherServers.forEach(({ server, connectionState }) => {
+      listEl.appendChild(createServerCard(server, connectionState));
+    });
+  }
+
   updateSessionTabs();
 }
 
@@ -1069,26 +1083,25 @@ function renderSnippetList() {
 
   snippets.forEach((snippet) => {
     const div = document.createElement("div");
-    div.className = "snippet-item bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3 shadow-sm hover:shadow-md transition-all group cursor-pointer";
+    div.className = "snippet-item bg-white dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700/80 rounded-lg px-3 py-2.5 shadow-sm group flex items-center gap-3";
     div.innerHTML = `
-      <div class="flex justify-between items-center mb-1">
-        <span class="font-medium text-gray-800 dark:text-gray-200 truncate flex-1">${snippet.name}</span>
-        <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button class="snippet-edit-btn p-1 rounded text-gray-400 hover:text-blue-500 transition-colors" data-id="${snippet.id}">
-             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
-          </button>
-          <button class="snippet-delete-btn p-1 rounded text-gray-400 hover:text-red-500 transition-colors" data-id="${snippet.id}">
-             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-          </button>
-        </div>
+      <div class="w-2 h-2 rounded-full bg-blue-400 dark:bg-blue-500/60 flex-shrink-0"></div>
+      <div class="min-w-0 flex-1">
+        <div class="server-card-name truncate">${snippet.name}</div>
+        <div class="server-card-subtitle font-mono truncate text-blue-600/70 dark:text-blue-400/70">${snippet.command}</div>
       </div>
-      <div class="text-xs font-mono bg-gray-50 dark:bg-gray-900 p-1.5 rounded text-gray-600 dark:text-gray-400 truncate mb-2">
-        ${snippet.command}
+      <div class="server-actions flex gap-1 flex-shrink-0">
+        <button class="server-action-btn snippet-edit-btn" data-id="${snippet.id}" title="Edit">
+          <svg class="server-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+        </button>
+        <button class="server-action-btn delete snippet-delete-btn" data-id="${snippet.id}" title="Delete">
+          <svg class="server-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+        </button>
       </div>
-      <div class="flex justify-between items-end">
-        <p class="text-xs text-gray-500 dark:text-gray-500 truncate max-w-[70%]">${snippet.description || ''}</p>
-        <button class="snippet-run-btn bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 px-2 py-1 rounded text-xs font-medium transition-colors" data-id="${snippet.id}">Run</button>
-      </div>
+      <button class="ghost-btn ghost-btn-primary snippet-run-btn flex-shrink-0" data-id="${snippet.id}">
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        Run
+      </button>
     `;
     listEl.appendChild(div);
   });
@@ -1328,22 +1341,11 @@ window.addEventListener("DOMContentLoaded", () => {
     const button = target.closest("button");
     const item = target.closest(".server-item");
     
-    // Handle card click for session switching
-    if (item && !button) {
-       const id = item.querySelector(".connect-btn")?.dataset.id;
-       if (id) {
-         const session = sessions.get(id);
-         if (session && session.connectionState.type === "Connected") {
-           setActiveSession(id);
-           return;
-         }
-       }
-    }
-
     if (!button) return;
     const id = button.dataset.id;
     if (!id) return;
-    if (button.classList.contains("connect-btn")) {
+    
+    if (button.classList.contains("ghost-btn-success") || button.classList.contains("ghost-btn-danger")) {
       const session = sessions.get(id);
       if (session && session.connectionState.type === "Connected") {
         setActiveSession(id);
