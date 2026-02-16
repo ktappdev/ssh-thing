@@ -72,7 +72,6 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
-            target/release/bundle/msi/*.msi
 
   build-macos:
     name: Build macOS (.dmg)
@@ -117,4 +116,3 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
-            target/release/bundle/dmg/*.dmg
