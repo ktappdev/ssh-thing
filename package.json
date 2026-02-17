@@ -11,7 +11,8 @@
     "build:macos": "tauri build --target x86_64-apple-darwin",
     "build:linux": "tauri build --target x86_64-unknown-linux-gnu",
     "build:deb": "tauri build --target x86_64-unknown-linux-gnu --bundler deb",
-    "build:appimage": "tauri build --target x86_64-unknown-linux-gnu --bundler appimage"
+    "build:appimage": "tauri build --target x86_64-unknown-linux-gnu --bundler appimage",
+    "build:release": "./build-release.sh"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"
