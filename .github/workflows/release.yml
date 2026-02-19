@@ -40,6 +40,12 @@ jobs:
         run: |
           node -e "const fs=require('fs'); const p='src-tauri/tauri.conf.json'; const cfg=JSON.parse(fs.readFileSync(p,'utf8')); const v=(process.env.RELEASE_TAG||'').replace(/^v/,''); cfg.version=v; fs.writeFileSync(p, JSON.stringify(cfg,null,2)); console.log('tauri.conf.json version set to', v);"
 
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -50,18 +56,29 @@ jobs:
         run: |
           rustup target add x86_64-pc-windows-msvc
 
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install frontend dependencies
+        run: npm install
 
       - name: Build Tauri app
-        working-directory: ./src-tauri
-        run: cargo tauri build --target x86_64-pc-windows-msvc
+        run: npm run tauri build -- --target x86_64-pc-windows-msvc
 
       - name: List built artifacts (Windows)
         shell: bash
         run: |
-          ls -R target || true
-          ls -R target/x86_64-pc-windows-msvc || true
+          ls -R src-tauri/target || true
+          ls -R src-tauri/target/x86_64-pc-windows-msvc || true
 
       - name: Upload Windows installer to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -71,7 +88,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           fail_on_unmatched_files: true
           files: |
-            target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
 
   build-macos:
     name: Build macOS (.dmg)
@@ -88,24 +105,41 @@ jobs:
         run: |
           node -e "const fs=require('fs'); const p='src-tauri/tauri.conf.json'; const cfg=JSON.parse(fs.readFileSync(p,'utf8')); const v=(process.env.RELEASE_TAG||'').replace(/^v/,''); cfg.version=v; fs.writeFileSync(p, JSON.stringify(cfg,null,2)); console.log('tauri.conf.json version set to', v);"
 
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
           targets: aarch64-apple-darwin
 
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install frontend dependencies
+        run: npm install
 
       - name: Build Tauri app
-        working-directory: ./src-tauri
-        run: cargo tauri build --target aarch64-apple-darwin
+        run: npm run tauri build -- --target aarch64-apple-darwin
 
       - name: List built artifacts (macOS)
         shell: bash
         run: |
-          ls -R target || true
-          ls -R target/aarch64-apple-darwin || true
+          ls -R src-tauri/target || true
+          ls -R src-tauri/target/aarch64-apple-darwin || true
 
       - name: Upload macOS installer to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -115,4 +149,4 @@ jobs:
           tag_name: ${{ github.ref_name }}
           fail_on_unmatched_files: true
           files: |
-            target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
