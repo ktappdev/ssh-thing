@@ -1,18 +1,42 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
+const tauriWindow = window.__TAURI__.window || null;
 
 const MAX_CONNECTIONS = 5;
+const DEFAULT_TERMINAL_SETTINGS = {
+  fontSize: 14,
+  scrollback: 5000,
+};
 let servers = [];
 let sessions = new Map(); // Map<serverId | welcomeId, SessionState>
 let activeSessionId = null;
 const welcomeSessionId = "__welcome__";
 let connectionLog = [];
 let pendingHostKey = null;
-let pendingDeleteServerId = null;
+let pendingDeleteTarget = null;
 let pendingDisconnectResolve = null;
+let pendingCloseAppResolve = null;
 let localEchoEnabled = false;
 let terminalTransparent = false;
 let serverFilterTerm = "";
+let terminalSettings = loadTerminalSettings();
+let allowWindowClose = false;
+
+function loadTerminalSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("terminal-settings") || "{}");
+    return {
+      fontSize: Number(saved.fontSize) || DEFAULT_TERMINAL_SETTINGS.fontSize,
+      scrollback: Number(saved.scrollback) || DEFAULT_TERMINAL_SETTINGS.scrollback,
+    };
+  } catch {
+    return { ...DEFAULT_TERMINAL_SETTINGS };
+  }
+}
+
+function persistTerminalSettings() {
+  localStorage.setItem("terminal-settings", JSON.stringify(terminalSettings));
+}
 
 function getTerminalContainer() {
   const container = document.getElementById("terminal-container");
@@ -32,6 +56,7 @@ function updateStatusBarForActiveSession() {
     statusBarHost.textContent = "Not connected";
     statusBarState.textContent = "Idle";
     statusBarState.className = "font-medium text-xs uppercase tracking-wide text-gray-500";
+    updateHeaderButtons();
     return;
   }
 
@@ -53,10 +78,77 @@ function updateStatusBarForActiveSession() {
     default:
       statusBarState.className = "font-medium text-xs uppercase tracking-wide text-gray-600 dark:text-gray-400";
   }
+  updateHeaderButtons();
+}
+
+function updateHeaderButtons() {
+  const session = getActiveSession();
+  const disconnectBtn = document.getElementById("disconnect-btn");
+  const reconnectBtn = document.getElementById("reconnect-btn");
+  if (!disconnectBtn || !reconnectBtn) return;
+
+  if (!session?.server) {
+    disconnectBtn.classList.add("hidden");
+    reconnectBtn.classList.add("hidden");
+    return;
+  }
+
+  const state = session.connectionState?.type;
+  disconnectBtn.classList.toggle("hidden", state !== "Connected");
+  reconnectBtn.classList.toggle("hidden", !["Disconnected", "Error"].includes(state));
 }
 
 function getActiveSession() {
   return activeSessionId ? sessions.get(activeSessionId) : null;
+}
+
+function hasActiveConnections() {
+  return Array.from(sessions.values()).some((session) => {
+    const type = session.connectionState?.type;
+    return type === "Connected" || type === "Connecting";
+  });
+}
+
+function formatLastConnected(timestamp) {
+  if (!timestamp) return "Never connected";
+  const date = new Date(timestamp * 1000);
+  return `Last: ${date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  })}`;
+}
+
+function showToast(message, type = "info") {
+  const stack = document.getElementById("toast-stack");
+  if (!stack) return;
+
+  const toast = document.createElement("div");
+  const tone = {
+    info: "bg-gray-900/90 text-white",
+    success: "bg-green-600/95 text-white",
+    warning: "bg-amber-500/95 text-white",
+    error: "bg-red-600/95 text-white",
+  }[type] || "bg-gray-900/90 text-white";
+
+  toast.className = `pointer-events-auto rounded-lg px-4 py-3 shadow-lg text-sm ${tone}`;
+  toast.textContent = message;
+  stack.appendChild(toast);
+
+  setTimeout(() => {
+    toast.remove();
+  }, 3200);
+}
+
+function applyTerminalSettings() {
+  persistTerminalSettings();
+  sessions.forEach((session) => {
+    session.term?.setOption("fontSize", terminalSettings.fontSize);
+    session.term?.setOption("scrollback", terminalSettings.scrollback);
+    session.fitAddon?.fit();
+    syncPtySize(session);
+  });
 }
 
 function focusActiveTerminal({ defer = false } = {}) {
@@ -123,13 +215,14 @@ function ensureSession(server) {
     return existing;
   }
 
-  const { term, fitAddon, container } = createTerminalPane(server.id);
+  const { term, fitAddon, searchAddon, container } = createTerminalPane(server.id);
   const session = {
     id: server.id,
     server,
     shellId: null,
     term,
     fitAddon,
+    searchAddon,
     container,
     connectionState: { type: "Disconnected" },
     autoScrollEnabled: true,
@@ -149,17 +242,17 @@ function createTerminalPane(sessionId) {
   const termInstance = new Terminal({
     cursorBlink: true,
     fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-    fontSize: 14,
+    fontSize: terminalSettings.fontSize,
     theme: getTerminalTheme(),
-    // Performance optimizations
-    scrollback: 1000,
+    scrollback: terminalSettings.scrollback,
     fastScrollModifier: 'alt',
     rightClickSelectsWord: true,
-    rendererType: 'dom', // Use DOM renderer for better performance
   });
 
   const paneFitAddon = new FitAddon.FitAddon();
+  const searchAddon = new SearchAddon.SearchAddon();
   termInstance.loadAddon(paneFitAddon);
+  termInstance.loadAddon(searchAddon);
   termInstance.open(pane);
   paneFitAddon.fit();
 
@@ -227,7 +320,7 @@ function createTerminalPane(sessionId) {
     session.autoScrollEnabled = newRow >= maxScroll;
   });
 
-  return { term: termInstance, fitAddon: paneFitAddon, container: pane };
+  return { term: termInstance, fitAddon: paneFitAddon, searchAddon, container: pane };
 }
 
 function setActiveSession(sessionId) {
@@ -291,13 +384,14 @@ function updateSessionCount() {
 
 function ensureWelcomeSession() {
   if (sessions.has(welcomeSessionId)) return;
-  const { term, fitAddon, container } = createTerminalPane(welcomeSessionId);
+  const { term, fitAddon, searchAddon, container } = createTerminalPane(welcomeSessionId);
   sessions.set(welcomeSessionId, {
     id: welcomeSessionId,
     server: null,
     shellId: null,
     term,
     fitAddon,
+    searchAddon,
     container,
     connectionState: { type: "Disconnected" },
     autoScrollEnabled: true,
@@ -318,15 +412,20 @@ function removeWelcomeSession() {
 }
 
 async function confirmDeleteServer() {
-  if (!pendingDeleteServerId) return;
-  const id = pendingDeleteServerId;
+  if (!pendingDeleteTarget) return;
+  const { kind, id } = pendingDeleteTarget;
   closeDeleteModal();
   try {
-    await invoke("delete_server", { id });
-    loadServers();
+    if (kind === "server") {
+      await invoke("delete_server", { id });
+      loadServers();
+    } else {
+      await invoke("delete_snippet", { id });
+      loadSnippets();
+    }
   } catch (error) {
-    console.error("Failed to delete server:", error);
-    alert("Failed to delete server: " + error);
+    console.error(`Failed to delete ${kind}:`, error);
+    showAlert("Delete Failed", `Failed to delete ${kind}: ${error}`);
   }
 }
 
@@ -347,6 +446,20 @@ function openHostKeyModal(prompt) {
   document.getElementById("host-key-type").textContent = prompt.key_type;
   document.getElementById("host-key-fingerprint").textContent = prompt.fingerprint;
   document.getElementById("host-key-modal").classList.remove("hidden");
+}
+
+function openDeleteModal({ kind, id, label }) {
+  const modal = document.getElementById("delete-confirm-modal");
+  const title = document.getElementById("delete-confirm-title");
+  const message = document.getElementById("delete-confirm-message");
+  if (title) {
+    title.textContent = kind === "snippet" ? "Delete snippet?" : "Delete host?";
+  }
+  if (message) {
+    message.textContent = `Delete ${label}? This action cannot be undone.`;
+  }
+  pendingDeleteTarget = { kind, id };
+  modal?.classList.remove("hidden");
 }
 
 function closeHostKeyModal() {
@@ -406,6 +519,7 @@ function initTerminal() {
 }
 
 function updateConnectionState(session, state) {
+  const previousType = session.connectionState?.type || "Disconnected";
   const normalizedState = normalizeConnectionState(state);
   session.connectionState = normalizedState;
 
@@ -426,6 +540,7 @@ function updateConnectionState(session, state) {
         statusEl.className = "text-xs font-medium text-white bg-yellow-500 px-2.5 py-0.5 rounded-full";
         statusIndicator.className = "w-2 h-2 rounded-full bg-yellow-500 animate-pulse";
         disconnectBtn.classList.add("hidden");
+        document.getElementById("reconnect-btn")?.classList.add("hidden");
         break;
       case "Connected":
         session.term.reset();
@@ -434,6 +549,7 @@ function updateConnectionState(session, state) {
         statusEl.className = "text-xs font-medium text-white bg-green-500 px-2.5 py-0.5 rounded-full";
         statusIndicator.className = "w-2 h-2 rounded-full bg-green-500";
         disconnectBtn.classList.remove("hidden");
+        document.getElementById("reconnect-btn")?.classList.add("hidden");
         break;
       case "Disconnected":
         session.term.reset();
@@ -442,6 +558,7 @@ function updateConnectionState(session, state) {
         statusEl.className = "text-xs font-medium text-gray-600 bg-gray-200 dark:text-gray-400 dark:bg-gray-700 px-2.5 py-0.5 rounded-full";
         statusIndicator.className = "w-2 h-2 rounded-full bg-gray-400";
         disconnectBtn.classList.add("hidden");
+        document.getElementById("reconnect-btn")?.classList.remove("hidden");
         break;
       case "Error":
         session.term.reset();
@@ -450,6 +567,7 @@ function updateConnectionState(session, state) {
         statusEl.className = "text-xs font-medium text-white bg-red-500 px-2.5 py-0.5 rounded-full";
         statusIndicator.className = "w-2 h-2 rounded-full bg-red-500";
         disconnectBtn.classList.add("hidden");
+        document.getElementById("reconnect-btn")?.classList.remove("hidden");
         showAlert(getErrorType(normalizedState.error), normalizedState.error);
         break;
     }
@@ -471,6 +589,19 @@ function updateConnectionState(session, state) {
     case "Error":
       logConnectionEvent(`Error: ${normalizedState.error}`, label, "error");
       break;
+  }
+
+  if (
+    session.server &&
+    session.id !== activeSessionId &&
+    previousType === "Connected" &&
+    ["Disconnected", "Error"].includes(normalizedState.type)
+  ) {
+    const name = session.server.nickname || `${session.server.user}@${session.server.host}`;
+    const suffix = normalizedState.type === "Error" && normalizedState.error
+      ? `: ${normalizedState.error}`
+      : "";
+    showToast(`${name} disconnected${suffix}`, normalizedState.type === "Error" ? "error" : "warning");
   }
 
   // Refresh server list so badges/buttons reflect latest state
@@ -587,7 +718,7 @@ function renderServerList() {
     const nickname = server.nickname || "";
     const haystack = `${nickname} ${server.user} ${server.host}`.toLowerCase();
     return haystack.includes(normalizedTerm);
-  });
+  }).sort((left, right) => (right.last_connected_at || 0) - (left.last_connected_at || 0));
 
   if (filterWrap) {
     filterWrap.classList.toggle("hidden", servers.length < 6);
@@ -642,7 +773,12 @@ function renderServerList() {
     div.className = `server-item bg-white dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700/80 rounded-lg px-3 py-2.5 shadow-sm group flex items-center gap-3 cursor-pointer ${statusClass}`;
 
     const displayName = server.nickname && server.nickname.trim().length > 0 ? server.nickname : `${server.user}@${server.host}`;
-    const subtitle = server.nickname && server.nickname.trim().length > 0 ? `${server.user}@${server.host}` : `:${server.port}`;
+    const subtitle = server.nickname && server.nickname.trim().length > 0
+      ? `${server.user}@${server.host}`
+      : `Port ${server.port}`;
+    const meta = [];
+    meta.push(`:${server.port}`);
+    meta.push(formatLastConnected(server.last_connected_at));
 
     let statusDot = "";
     switch (connectionState.type) {
@@ -678,9 +814,13 @@ function renderServerList() {
         <div class="min-w-0 flex-1">
           <div class="server-card-name truncate">${displayName}</div>
           <div class="server-card-subtitle truncate">${subtitle}</div>
+          <div class="server-card-meta truncate">${meta.join(" • ")}</div>
         </div>
       </div>
       <div class="server-actions flex gap-1 flex-shrink-0">
+        <button class="server-action-btn duplicate-btn" data-id="${server.id}" title="Duplicate">
+          <svg class="server-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2M10 20h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"></path></svg>
+        </button>
         <button class="server-action-btn edit-btn" data-id="${server.id}" title="Edit">
           <svg class="server-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
         </button>
@@ -688,7 +828,7 @@ function renderServerList() {
           <svg class="server-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
         </button>
       </div>
-      <button onclick="event.stopPropagation(); window.handleCardDisconnect?.('${server.id}')" class="ghost-btn ${buttonClass} flex-shrink-0" data-id="${server.id}">
+      <button class="ghost-btn connect-btn ${buttonClass} flex-shrink-0" data-id="${server.id}">
         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">${buttonIcon}</svg>
         ${buttonLabel}
       </button>
@@ -765,10 +905,10 @@ async function connectToServer(id) {
     syncPtySize(session);
     updateConnectionState(session, "Connected");
     logConnectionEvent("Shell opened", `${server.user}@${server.host}:${server.port}`, "success");
+    loadServers();
   } catch (error) {
     console.error("Failed to connect:", error);
     updateConnectionState(session, { type: "Error", error: String(error) });
-    showAlert(getErrorType(String(error)), String(error));
   }
 }
 
@@ -836,7 +976,7 @@ async function disconnectFromServer(serverId = null, { requireConfirm = false } 
     logConnectionEvent("Disconnect requested", "", "info");
   } catch (error) {
     console.error("Failed to disconnect:", error);
-    alert("Failed to disconnect: " + error);
+    showAlert("Disconnect Failed", String(error));
   } finally {
     renderServerList();
     updateStatusBarForActiveSession();
@@ -898,12 +1038,20 @@ function openModal() {
   if (nicknameInput) {
     nicknameInput.value = "";
   }
+  document.getElementById("auth-type").value = "password";
+  document.getElementById("password-field").classList.remove("hidden");
+  document.getElementById("key-field").classList.add("hidden");
   document.getElementById("server-password").placeholder = "";
   document.getElementById("server-key").placeholder = "";
+  document.getElementById("server-timeout").value = "30";
 }
 
 function closeModal() {
   document.getElementById("server-modal").classList.add("hidden");
+  const keyFileInput = document.getElementById("server-key-file");
+  if (keyFileInput) {
+    keyFileInput.value = "";
+  }
 }
 
 function openEditModal(id) {
@@ -920,6 +1068,7 @@ function openEditModal(id) {
   document.getElementById("server-host").value = server.host;
   document.getElementById("server-port").value = server.port;
   document.getElementById("server-user").value = server.user;
+  document.getElementById("server-timeout").value = String(server.timeout_seconds || 30);
 
   if (server.auth.type === "Password") {
     document.getElementById("auth-type").value = "password";
@@ -960,6 +1109,7 @@ async function saveServer(e) {
   const host = document.getElementById("server-host").value;
   const port = parseInt(document.getElementById("server-port").value);
   const user = document.getElementById("server-user").value;
+  const timeout_seconds = Math.max(5, parseInt(document.getElementById("server-timeout").value, 10) || 30);
   const authType = document.getElementById("auth-type").value;
   const existing = servers.find((s) => s.id === id);
 
@@ -981,10 +1131,10 @@ async function saveServer(e) {
       auth = { type: "SecretRef", secret_id: existingSecretId, kind: "Password" };
     } else if (existing && existing.auth && existing.auth.type === "Password" && existing.auth.password) {
       // Legacy plaintext fallback: require user to re-enter
-      alert("Please enter a password to store in the keychain.");
+      showAlert("Password Required", "Please enter a password to store in the keychain.", "warning");
       return;
     } else {
-      alert("Please enter a password.");
+      showAlert("Password Required", "Please enter a password.", "warning");
       return;
     }
   } else {
@@ -1003,10 +1153,10 @@ async function saveServer(e) {
     } else if (existingSecretId) {
       auth = { type: "SecretRef", secret_id: existingSecretId, kind: "PrivateKey" };
     } else if (existing && existing.auth && existing.auth.type === "Key" && existing.auth.private_key) {
-      alert("Please paste your private key to store in the keychain.");
+      showAlert("Private Key Required", "Please paste your private key to store in the keychain.", "warning");
       return;
     } else {
-      alert("Please paste your private key.");
+      showAlert("Private Key Required", "Please paste your private key.", "warning");
       return;
     }
   }
@@ -1017,6 +1167,8 @@ async function saveServer(e) {
     host,
     port,
     user,
+    timeout_seconds,
+    last_connected_at: existing?.last_connected_at || null,
     auth,
   };
 
@@ -1030,34 +1182,28 @@ async function saveServer(e) {
     loadServers();
   } catch (error) {
     console.error("Failed to save server:", error);
-    alert("Failed to save server: " + error);
+    showAlert("Save Failed", `Failed to save server: ${error}`);
   }
 }
 
 async function deleteServer(id) {
-  const modal = document.getElementById("delete-confirm-modal");
-  const message = document.getElementById("delete-confirm-message");
-  if (message) {
-    const server = servers.find((item) => item.id === id);
-    const label = server
-      ? server.nickname && server.nickname.trim().length > 0
-        ? server.nickname
-        : `${server.user}@${server.host}`
-      : "this host";
-    message.textContent = `Delete ${label}? This action cannot be undone.`;
-  }
-  pendingDeleteServerId = id;
-  if (modal) {
-    modal.classList.remove("hidden");
-  }
-  return;
+  const server = servers.find((item) => item.id === id);
+  const label = server
+    ? server.nickname && server.nickname.trim().length > 0
+      ? server.nickname
+      : `${server.user}@${server.host}`
+    : "this host";
+  openDeleteModal({ kind: "server", id, label });
+}
 
+async function duplicateServer(id) {
   try {
-    await invoke("delete_server", { id });
-    loadServers();
+    await invoke("duplicate_server", { id });
+    await loadServers();
+    showToast("Server duplicated.", "success");
   } catch (error) {
-    console.error("Failed to delete server:", error);
-    alert("Failed to delete server: " + error);
+    console.error("Failed to duplicate server:", error);
+    showAlert("Duplicate Failed", `Failed to duplicate server: ${error}`);
   }
 }
 
@@ -1084,6 +1230,7 @@ function renderSnippetList() {
   snippets.forEach((snippet) => {
     const div = document.createElement("div");
     div.className = "snippet-item bg-white dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700/80 rounded-lg px-3 py-2.5 shadow-sm group flex items-center gap-3 relative";
+    div.dataset.id = snippet.id;
     
     const firstPart = snippet.command.split('&&')[0].trim();
     const displayCommand = firstPart.length > 28 ? firstPart.substring(0, 28) + '...' : firstPart;
@@ -1125,13 +1272,19 @@ function renderSnippetList() {
 async function executeSnippet(snippet) {
   const session = getActiveSession();
   if (!session || !session.shellId || !session.term) {
-    alert("Please connect to a server before running a snippet.");
+    showAlert("No Active Session", "Please connect to a server before running a snippet.", "warning");
     return;
   }
 
   session.term.writeln(`\r\n\x1b[1;33mRunning snippet: ${snippet.name}\x1b[0m\r\n`);
   try {
+    const snippetCard = document.querySelector(`.snippet-item[data-id="${snippet.id}"]`);
+    snippetCard?.classList.add("status-connected");
+    showToast(`Running snippet: ${snippet.name}`, "info");
     await invoke("send_input", { shellId: session.shellId, input: snippet.command + "\n" });
+    setTimeout(() => {
+      snippetCard?.classList.remove("status-connected");
+    }, 1200);
   } catch (error) {
     console.error("Failed to run snippet:", error);
     showAlert("Snippet Error", `${snippet.name} failed: ${error}`);
@@ -1149,12 +1302,46 @@ function closeSnippetModal() {
   document.getElementById("snippet-modal").classList.add("hidden");
 }
 
+function openTerminalSettingsModal() {
+  document.getElementById("terminal-font-size").value = String(terminalSettings.fontSize);
+  document.getElementById("terminal-scrollback").value = String(terminalSettings.scrollback);
+  document.getElementById("terminal-settings-modal").classList.remove("hidden");
+}
+
+function closeTerminalSettingsModal() {
+  document.getElementById("terminal-settings-modal").classList.add("hidden");
+}
+
+function openTerminalSearch() {
+  const searchBar = document.getElementById("terminal-search-bar");
+  const input = document.getElementById("terminal-search-input");
+  if (!searchBar || !input) return;
+  searchBar.classList.remove("hidden");
+  input.focus();
+  input.select();
+}
+
+function closeTerminalSearch() {
+  document.getElementById("terminal-search-bar")?.classList.add("hidden");
+}
+
+function searchTerminal(direction = "next") {
+  const query = document.getElementById("terminal-search-input")?.value || "";
+  const session = getActiveSession();
+  if (!query || !session?.searchAddon) return;
+  if (direction === "previous") {
+    session.searchAddon.findPrevious(query, { incremental: true });
+  } else {
+    session.searchAddon.findNext(query, { incremental: true });
+  }
+}
+
 function closeDeleteModal() {
   const modal = document.getElementById("delete-confirm-modal");
   if (modal) {
     modal.classList.add("hidden");
   }
-  pendingDeleteServerId = null;
+  pendingDeleteTarget = null;
 }
 
 function closeDisconnectConfirmModal() {
@@ -1162,6 +1349,26 @@ function closeDisconnectConfirmModal() {
   if (modal) {
     modal.classList.add("hidden");
   }
+}
+
+function closeAppConfirmModal() {
+  document.getElementById("close-app-modal")?.classList.add("hidden");
+}
+
+function resolveCloseAppConfirm(result) {
+  const resolve = pendingCloseAppResolve;
+  pendingCloseAppResolve = null;
+  closeAppConfirmModal();
+  if (resolve) {
+    resolve(result);
+  }
+}
+
+function confirmCloseApp() {
+  document.getElementById("close-app-modal")?.classList.remove("hidden");
+  return new Promise((resolve) => {
+    pendingCloseAppResolve = resolve;
+  });
 }
 
 function resolveDisconnectConfirm(result) {
@@ -1224,20 +1431,17 @@ async function saveSnippet(e) {
     loadSnippets();
   } catch (error) {
     console.error("Failed to save snippet:", error);
-    alert("Failed to save snippet: " + error);
+    showAlert("Save Failed", `Failed to save snippet: ${error}`);
   }
 }
 
 async function deleteSnippet(id) {
-  if (!confirm("Are you sure you want to delete this snippet?")) return;
-
-  try {
-    await invoke("delete_snippet", { id });
-    loadSnippets();
-  } catch (error) {
-    console.error("Failed to delete snippet:", error);
-    alert("Failed to delete snippet: " + error);
-  }
+  const snippet = snippets.find((item) => item.id === id);
+  openDeleteModal({
+    kind: "snippet",
+    id,
+    label: snippet?.name || "this snippet",
+  });
 }
 
 function initTabs() {
@@ -1296,18 +1500,71 @@ function disableInputCorrections() {
   });
 }
 
+async function setupWindowCloseGuard() {
+  const currentWindow = tauriWindow?.getCurrentWindow?.();
+  if (!currentWindow?.onCloseRequested) return;
+
+  await currentWindow.onCloseRequested(async (event) => {
+    if (allowWindowClose || !hasActiveConnections()) {
+      return;
+    }
+
+    event.preventDefault();
+    const confirmed = await confirmCloseApp();
+    if (!confirmed) {
+      return;
+    }
+
+    allowWindowClose = true;
+    currentWindow.close();
+  });
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   initTheme();
-  initTabs(); // Initialize tabs
+  initTabs();
   disableInputCorrections();
+  setupWindowCloseGuard();
   
   document.getElementById("theme-toggle").addEventListener("click", toggleTheme);
+  document.getElementById("terminal-settings-btn").addEventListener("click", openTerminalSettingsModal);
+  document.getElementById("terminal-settings-cancel").addEventListener("click", closeTerminalSettingsModal);
+  document.getElementById("terminal-settings-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    terminalSettings.fontSize = parseInt(document.getElementById("terminal-font-size").value, 10);
+    terminalSettings.scrollback = parseInt(document.getElementById("terminal-scrollback").value, 10);
+    applyTerminalSettings();
+    closeTerminalSettingsModal();
+    showToast("Terminal settings updated.", "success");
+  });
+  document.getElementById("terminal-search-btn").addEventListener("click", openTerminalSearch);
+  document.getElementById("terminal-search-close").addEventListener("click", closeTerminalSearch);
+  document.getElementById("terminal-search-next").addEventListener("click", () => searchTerminal("next"));
+  document.getElementById("terminal-search-prev").addEventListener("click", () => searchTerminal("previous"));
+  document.getElementById("terminal-search-input").addEventListener("input", () => searchTerminal("next"));
   
-  // Focus mode
   document.getElementById("focus-btn").addEventListener("click", toggleFocusMode);
   document.getElementById("exit-focus-btn").addEventListener("click", toggleFocusMode);
   document.getElementById("focus-toggle-btn").addEventListener("click", toggleFocusMode);
   document.getElementById("terminal-bg-toggle").addEventListener("click", toggleTerminalBackground);
+  document.getElementById("reconnect-btn").addEventListener("click", () => {
+    const session = getActiveSession();
+    if (session?.server) {
+      connectToServer(session.server.id);
+    }
+  });
+  document.getElementById("server-key-browse-btn").addEventListener("click", () => {
+    document.getElementById("server-key-file").click();
+  });
+  document.getElementById("server-key-file").addEventListener("change", async (event) => {
+    const [file] = event.target.files || [];
+    if (!file) return;
+    const content = await file.text();
+    document.getElementById("server-key").value = content;
+    showToast(`Loaded key file: ${file.name}`, "success");
+  });
+  document.getElementById("close-app-cancel").addEventListener("click", () => resolveCloseAppConfirm(false));
+  document.getElementById("close-app-confirm").addEventListener("click", () => resolveCloseAppConfirm(true));
 
   const serverFilterInput = document.getElementById("server-filter");
   if (serverFilterInput) {
@@ -1325,6 +1582,7 @@ window.addEventListener("DOMContentLoaded", () => {
   });
 
   initTerminal();
+  applyTerminalSettings();
   
   document.getElementById("add-server-btn").addEventListener("click", openModal);
   
@@ -1351,6 +1609,22 @@ window.addEventListener("DOMContentLoaded", () => {
       }
     });
   }
+  const terminalSettingsModal = document.getElementById("terminal-settings-modal");
+  if (terminalSettingsModal) {
+    terminalSettingsModal.addEventListener("click", (event) => {
+      if (event.target === terminalSettingsModal) {
+        closeTerminalSettingsModal();
+      }
+    });
+  }
+  const closeAppModal = document.getElementById("close-app-modal");
+  if (closeAppModal) {
+    closeAppModal.addEventListener("click", (event) => {
+      if (event.target === closeAppModal) {
+        resolveCloseAppConfirm(false);
+      }
+    });
+  }
   document.getElementById("server-list").addEventListener("click", (e) => {
     const target = e.target;
     const button = target.closest("button");
@@ -1360,7 +1634,7 @@ window.addEventListener("DOMContentLoaded", () => {
     const id = button.dataset.id;
     if (!id) return;
     
-    if (button.classList.contains("ghost-btn-success") || button.classList.contains("ghost-btn-danger")) {
+    if (button.classList.contains("connect-btn")) {
       const session = sessions.get(id);
       if (session && session.connectionState.type === "Connected") {
         setActiveSession(id);
@@ -1368,6 +1642,10 @@ window.addEventListener("DOMContentLoaded", () => {
       } else {
         connectToServer(id);
       }
+      return;
+    }
+    if (button.classList.contains("duplicate-btn")) {
+      duplicateServer(id);
       return;
     }
     if (button.classList.contains("edit-btn")) {
@@ -1422,7 +1700,6 @@ window.addEventListener("DOMContentLoaded", () => {
   // Keyboard shortcuts
   document.addEventListener("keydown", (e) => {
     if (e.metaKey || e.ctrlKey) {
-      // Cmd/Ctrl + 1-9 for session switching
       if (e.key >= "1" && e.key <= "9") {
         e.preventDefault();
         const sessionIndex = parseInt(e.key) - 1;
@@ -1433,7 +1710,24 @@ window.addEventListener("DOMContentLoaded", () => {
           setActiveSession(connectedSessions[sessionIndex][0]);
         }
       }
-      // Cmd/Ctrl + W to close active session
+      else if (e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        openModal();
+      }
+      else if (e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        openTerminalSearch();
+      }
+      else if (e.key === "=" || e.key === "+") {
+        e.preventDefault();
+        terminalSettings.fontSize = Math.min(24, terminalSettings.fontSize + 1);
+        applyTerminalSettings();
+      }
+      else if (e.key === "-") {
+        e.preventDefault();
+        terminalSettings.fontSize = Math.max(10, terminalSettings.fontSize - 1);
+        applyTerminalSettings();
+      }
       else if (e.key === "w") {
         e.preventDefault();
         const activeSession = getActiveSession();
@@ -1441,6 +1735,9 @@ window.addEventListener("DOMContentLoaded", () => {
           disconnectFromServer(null, { requireConfirm: true });
         }
       }
+    }
+    if (e.key === "Escape") {
+      closeTerminalSearch();
     }
   });
   

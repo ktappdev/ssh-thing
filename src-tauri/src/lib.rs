@@ -278,6 +278,10 @@ pub struct ServerConnection {
     pub host: String,
     pub port: u16,
     pub user: String,
+    #[serde(default)]
+    pub timeout_seconds: Option<u64>,
+    #[serde(default)]
+    pub last_connected_at: Option<u64>,
     pub auth: AuthMethod,
 }
 
@@ -446,6 +450,8 @@ mod tests {
             host: "192.168.1.1".to_string(),
             port: 22,
             user: "testuser".to_string(),
+            timeout_seconds: None,
+            last_connected_at: None,
             auth: AuthMethod::Password {
                 password: "testpass".to_string(),
             },
@@ -475,6 +481,8 @@ mod tests {
             host: "server.example.com".to_string(),
             port: 2222,
             user: "admin".to_string(),
+            timeout_seconds: Some(45),
+            last_connected_at: None,
             auth: AuthMethod::Key {
                 private_key:
                     "-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----"
@@ -568,6 +576,8 @@ mod tests {
                 host: "localhost".to_string(),
                 port,
                 user: "user".to_string(),
+                timeout_seconds: None,
+                last_connected_at: None,
                 auth: AuthMethod::Password {
                     password: "pass".to_string(),
                 },
@@ -591,6 +601,8 @@ mod tests {
                 host: "host1.com".to_string(),
                 port: 22,
                 user: "user1".to_string(),
+                timeout_seconds: None,
+                last_connected_at: None,
                 auth: AuthMethod::Password {
                     password: "pass1".to_string(),
                 },
@@ -601,6 +613,8 @@ mod tests {
                 host: "host2.com".to_string(),
                 port: 2222,
                 user: "user2".to_string(),
+                timeout_seconds: Some(60),
+                last_connected_at: Some(1_700_000_000),
                 auth: AuthMethod::Key {
                     private_key: "key-data".to_string(),
                 },
@@ -858,6 +872,7 @@ pub async fn connect_ssh(
     port: u16,
     user: &str,
     auth: &AuthMethod,
+    timeout_seconds: Option<u64>,
     server_id: Option<&str>,
 ) -> Result<SshSession, String> {
     let addr = format!("{}:{}", host, port);
@@ -892,8 +907,22 @@ pub async fn connect_ssh(
         port,
         server_id: server_id.map(|s| s.to_string()),
     };
-    let mut session = russh::client::connect(config, addr, handler)
+    let connect_timeout = Duration::from_secs(timeout_seconds.unwrap_or(30).max(1));
+    let mut session = timeout(connect_timeout, russh::client::connect(config, addr, handler))
         .await
+        .map_err(|_| {
+            let message = format!(
+                "Failed to connect: timed out after {} seconds",
+                connect_timeout.as_secs()
+            );
+            let _ = emit_connection_state(
+                app,
+                server_id,
+                None,
+                ConnectionState::Error(message.clone()),
+            );
+            message
+        })?
         .map_err(|e| {
             let _ = emit_connection_state(
                 app,
@@ -1309,6 +1338,42 @@ async fn add_server(app: AppHandle, server: ServerConnection) -> Result<Vec<Serv
 }
 
 #[tauri::command]
+async fn duplicate_server(app: AppHandle, id: String) -> Result<Vec<ServerConnection>, String> {
+    let app_dir = get_app_dir(&app)?;
+    let mut servers = load_servers(&app_dir, &app)?;
+    let source = servers
+        .iter()
+        .find(|server| server.id == id)
+        .cloned()
+        .ok_or_else(|| format!("Server with id {} not found", id))?;
+
+    let mut duplicate = source.clone();
+    duplicate.id = uuid::Uuid::new_v4().to_string();
+    duplicate.nickname = Some(match source.nickname {
+        Some(name) if !name.trim().is_empty() => format!("{} Copy", name.trim()),
+        _ => format!("{}@{} Copy", source.user, source.host),
+    });
+    duplicate.last_connected_at = None;
+
+    if let AuthMethod::SecretRef { kind, .. } = &source.auth {
+        let secret = match &source.auth {
+            AuthMethod::SecretRef { secret_id, .. } => get_secret(&app, secret_id)?,
+            _ => unreachable!(),
+        };
+        let new_secret_id = format!("server:{}:{}", duplicate.id, uuid::Uuid::new_v4());
+        put_secret(&app, &new_secret_id, &secret)?;
+        duplicate.auth = AuthMethod::SecretRef {
+            secret_id: new_secret_id,
+            kind: kind.clone(),
+        };
+    }
+
+    servers.push(duplicate);
+    save_servers(&app_dir, &servers)?;
+    Ok(servers)
+}
+
+#[tauri::command]
 async fn delete_server(app: AppHandle, id: String) -> Result<Vec<ServerConnection>, String> {
     let app_dir = get_app_dir(&app)?;
     let mut servers = load_servers(&app_dir, &app)?;
@@ -1374,8 +1439,30 @@ async fn delete_snippet(app: AppHandle, id: String) -> Result<Vec<Snippet>, Stri
 #[tauri::command]
 async fn connect(app: AppHandle, server: ServerConnection) -> Result<String, String> {
     let session =
-        connect_ssh(&app, &server.host, server.port, &server.user, &server.auth, Some(&server.id))
+        connect_ssh(
+            &app,
+            &server.host,
+            server.port,
+            &server.user,
+            &server.auth,
+            server.timeout_seconds,
+            Some(&server.id),
+        )
             .await?;
+    let app_dir = get_app_dir(&app)?;
+    let mut persisted_servers = load_servers(&app_dir, &app)?;
+    if let Some(existing) = persisted_servers.iter_mut().find(|entry| entry.id == server.id) {
+        existing.last_connected_at = Some(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|e| format!("Time error: {}", e))?
+                .as_secs(),
+        );
+        if existing.timeout_seconds.is_none() && server.timeout_seconds.is_some() {
+            existing.timeout_seconds = server.timeout_seconds;
+        }
+        save_servers(&app_dir, &persisted_servers)?;
+    }
     let state = app.state::<AppState>();
 
     {
@@ -1487,6 +1574,7 @@ pub fn run() {
             get_servers,
             add_server,
             update_server,
+            duplicate_server,
             delete_server,
             get_snippets,
             add_snippet,
