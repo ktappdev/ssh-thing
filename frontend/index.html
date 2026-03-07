@@ -859,8 +859,8 @@
       }
 
       .brand-logo {
-        width: 2.75rem;
-        height: 2.75rem;
+        width: 3.5rem;
+        height: 3.5rem;
         border-radius: 0.875rem;
         background: linear-gradient(135deg, rgba(114, 135, 253, 0.16), rgba(30, 102, 245, 0.08));
         border: 1px solid rgba(114, 135, 253, 0.16);
@@ -877,7 +877,7 @@
       }
 
       .brand-title {
-        font-size: 1.125rem;
+        font-size: 1.35rem;
         font-weight: 700;
         letter-spacing: -0.02em;
         color: var(--text-primary);
@@ -998,6 +998,15 @@
       
       <!-- Sidebar -->
       <aside id="sidebar" class="w-80 flex-shrink-0 sidebar-surface border-r border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-300">
+        <!-- Sidebar Brand -->
+        <div class="sidebar-brand px-4 py-3 flex items-center gap-3 bg-gray-50/50 dark:bg-gray-800/30">
+          <div class="brand-lockup">
+            <img src="./assets/logo-square.png" alt="SSH THING logo" class="brand-logo" />
+            <div class="brand-copy">
+              <h1 class="brand-title">SSH THING</h1>
+            </div>
+          </div>
+        </div>
         <!-- Sidebar Header / Tabs -->
         <div class="sidebar-tab-strip flex border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
           <button id="tab-servers" class="tab-btn flex-1 text-sm font-medium">
@@ -1046,12 +1055,6 @@
         <!-- Header -->
         <header id="header" class="flex justify-between items-center mb-4 flex-shrink-0 header-glass rounded-lg px-4 py-3">
           <div class="flex items-center gap-3">
-            <div class="brand-lockup">
-              <img src="./assets/logo-square.png" alt="SSH THING logo" class="brand-logo" />
-              <div class="brand-copy">
-                <h1 class="brand-title">SSH THING</h1>
-              </div>
-            </div>
             <div id="connection-status" class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
               Disconnected
             </div>
