@@ -1,14 +1,22 @@
 const GITHUB_URL = "https://github.com/ktappdev";
 const TWITTER_URL = "https://twitter.com/ktappdev";
-const FALLBACK_VERSION = "0.1.0";
+const FALLBACK_VERSION = "unknown";
 
 async function getAppVersion() {
   const tauriApp = window.__TAURI__?.app;
-  if (tauriApp && typeof tauriApp.getVersion === "function") {
-    try {
-      return await tauriApp.getVersion();
-    } catch (error) {
-      console.warn("Failed to load app version:", error);
+  if (tauriApp) {
+    const getVersion =
+      typeof tauriApp.getVersion === "function"
+        ? tauriApp.getVersion.bind(tauriApp)
+        : typeof tauriApp.version === "function"
+          ? tauriApp.version.bind(tauriApp)
+          : null;
+    if (getVersion) {
+      try {
+        return await getVersion();
+      } catch (error) {
+        console.warn("Failed to load app version:", error);
+      }
     }
   }
 
