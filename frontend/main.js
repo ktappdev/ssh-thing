@@ -1,6 +1,12 @@
+import { initAboutModal } from "./components/about-modal.js";
+
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 const tauriWindow = window.__TAURI__.window || null;
+const SearchAddonCtor =
+  typeof window.SearchAddon !== "undefined" && typeof window.SearchAddon.SearchAddon === "function"
+    ? window.SearchAddon.SearchAddon
+    : null;
 
 const MAX_CONNECTIONS = 5;
 const DEFAULT_TERMINAL_SETTINGS = {
@@ -141,11 +147,22 @@ function showToast(message, type = "info") {
   }, 3200);
 }
 
+function setTerminalOption(term, key, value) {
+  if (!term) return;
+  if (typeof term.setOption === "function") {
+    term.setOption(key, value);
+    return;
+  }
+  if (term.options && typeof term.options === "object") {
+    term.options[key] = value;
+  }
+}
+
 function applyTerminalSettings() {
   persistTerminalSettings();
   sessions.forEach((session) => {
-    session.term?.setOption("fontSize", terminalSettings.fontSize);
-    session.term?.setOption("scrollback", terminalSettings.scrollback);
+    setTerminalOption(session.term, "fontSize", terminalSettings.fontSize);
+    setTerminalOption(session.term, "scrollback", terminalSettings.scrollback);
     session.fitAddon?.fit();
     syncPtySize(session);
   });
@@ -208,6 +225,23 @@ function writeToSessionTerminal(session, output) {
   }
 }
 
+function createFallbackTerminal(pane, reason) {
+  pane.innerHTML = `<div class="text-xs text-gray-500 dark:text-gray-400 p-4">${reason}</div>`;
+  return {
+    cols: 80,
+    rows: 24,
+    write: () => {},
+    writeln: () => {},
+    reset: () => {},
+    focus: () => {},
+    setOption: () => {},
+    onData: () => {},
+    onKey: () => {},
+    onScroll: () => {},
+    scrollToBottom: () => {},
+  };
+}
+
 function ensureSession(server) {
   const existing = sessions.get(server.id);
   if (existing) {
@@ -239,6 +273,15 @@ function createTerminalPane(sessionId) {
   pane.style.display = "none";
   hostContainer.appendChild(pane);
 
+  if (typeof window.Terminal !== "function") {
+    const term = createFallbackTerminal(pane, "Terminal engine failed to load. Connection list still works.");
+    return { term, fitAddon: { fit: () => {} }, searchAddon: null, container: pane };
+  }
+  if (!window.FitAddon || typeof window.FitAddon.FitAddon !== "function") {
+    const term = createFallbackTerminal(pane, "Terminal resize addon failed to load. Connection list still works.");
+    return { term, fitAddon: { fit: () => {} }, searchAddon: null, container: pane };
+  }
+
   const termInstance = new Terminal({
     cursorBlink: true,
     fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
@@ -250,9 +293,11 @@ function createTerminalPane(sessionId) {
   });
 
   const paneFitAddon = new FitAddon.FitAddon();
-  const searchAddon = new SearchAddon.SearchAddon();
+  const searchAddon = SearchAddonCtor ? new SearchAddonCtor() : null;
   termInstance.loadAddon(paneFitAddon);
-  termInstance.loadAddon(searchAddon);
+  if (searchAddon) {
+    termInstance.loadAddon(searchAddon);
+  }
   termInstance.open(pane);
   paneFitAddon.fit();
 
@@ -470,7 +515,7 @@ function toggleTheme() {
   const isDark = document.documentElement.classList.toggle('dark');
   localStorage.setItem('theme', isDark ? 'dark' : 'light');
   sessions.forEach((session) => {
-    session.term?.setOption('theme', getTerminalTheme());
+    setTerminalOption(session.term, "theme", getTerminalTheme());
   });
 }
 
@@ -488,7 +533,7 @@ function toggleTerminalBackground() {
     label.textContent = terminalTransparent && isDark ? 'Glass' : 'Solid';
   }
   sessions.forEach((session) => {
-    session.term?.setOption('theme', getTerminalTheme());
+    setTerminalOption(session.term, "theme", getTerminalTheme());
   });
 }
 
@@ -699,6 +744,11 @@ async function loadServers() {
     renderServerList();
   } catch (error) {
     console.error("Failed to load servers:", error);
+    const listEl = document.getElementById("server-list");
+    if (listEl) {
+      listEl.innerHTML = `<div class="text-center text-gray-500 dark:text-gray-400 mt-10 text-sm">Failed to load servers.</div>`;
+    }
+    showAlert("Load Failed", `Failed to load servers: ${error}`);
   }
 }
 
@@ -1043,7 +1093,10 @@ function openModal() {
   document.getElementById("key-field").classList.add("hidden");
   document.getElementById("server-password").placeholder = "";
   document.getElementById("server-key").placeholder = "";
-  document.getElementById("server-timeout").value = "30";
+  const timeoutInput = document.getElementById("server-timeout");
+  if (timeoutInput) {
+    timeoutInput.value = "30";
+  }
 }
 
 function closeModal() {
@@ -1068,7 +1121,10 @@ function openEditModal(id) {
   document.getElementById("server-host").value = server.host;
   document.getElementById("server-port").value = server.port;
   document.getElementById("server-user").value = server.user;
-  document.getElementById("server-timeout").value = String(server.timeout_seconds || 30);
+  const timeoutInput = document.getElementById("server-timeout");
+  if (timeoutInput) {
+    timeoutInput.value = String(server.timeout_seconds || 30);
+  }
 
   if (server.auth.type === "Password") {
     document.getElementById("auth-type").value = "password";
@@ -1109,7 +1165,9 @@ async function saveServer(e) {
   const host = document.getElementById("server-host").value;
   const port = parseInt(document.getElementById("server-port").value);
   const user = document.getElementById("server-user").value;
-  const timeout_seconds = Math.max(5, parseInt(document.getElementById("server-timeout").value, 10) || 30);
+  const timeoutInput = document.getElementById("server-timeout");
+  const timeoutValue = timeoutInput ? timeoutInput.value : "30";
+  const timeout_seconds = Math.max(5, parseInt(timeoutValue, 10) || 30);
   const authType = document.getElementById("auth-type").value;
   const existing = servers.find((s) => s.id === id);
 
@@ -1215,6 +1273,11 @@ async function loadSnippets() {
     renderSnippetList();
   } catch (error) {
     console.error("Failed to load snippets:", error);
+    const listEl = document.getElementById("snippet-list");
+    if (listEl) {
+      listEl.innerHTML = `<div class="text-center text-gray-500 dark:text-gray-400 mt-10 text-sm">Failed to load snippets.</div>`;
+    }
+    showAlert("Load Failed", `Failed to load snippets: ${error}`);
   }
 }
 
@@ -1303,16 +1366,24 @@ function closeSnippetModal() {
 }
 
 function openTerminalSettingsModal() {
-  document.getElementById("terminal-font-size").value = String(terminalSettings.fontSize);
-  document.getElementById("terminal-scrollback").value = String(terminalSettings.scrollback);
-  document.getElementById("terminal-settings-modal").classList.remove("hidden");
+  const fontSizeInput = document.getElementById("terminal-font-size");
+  const scrollbackInput = document.getElementById("terminal-scrollback");
+  const modal = document.getElementById("terminal-settings-modal");
+  if (!fontSizeInput || !scrollbackInput || !modal) return;
+  fontSizeInput.value = String(terminalSettings.fontSize);
+  scrollbackInput.value = String(terminalSettings.scrollback);
+  modal.classList.remove("hidden");
 }
 
 function closeTerminalSettingsModal() {
-  document.getElementById("terminal-settings-modal").classList.add("hidden");
+  document.getElementById("terminal-settings-modal")?.classList.add("hidden");
 }
 
 function openTerminalSearch() {
+  if (!SearchAddonCtor) {
+    showAlert("Search Unavailable", "Terminal search addon did not load. The rest of the app will continue working.", "warning");
+    return;
+  }
   const searchBar = document.getElementById("terminal-search-bar");
   const input = document.getElementById("terminal-search-input");
   if (!searchBar || !input) return;
@@ -1521,111 +1592,121 @@ async function setupWindowCloseGuard() {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
-  initTheme();
-  initTabs();
-  disableInputCorrections();
-  setupWindowCloseGuard();
-  
-  document.getElementById("theme-toggle").addEventListener("click", toggleTheme);
-  document.getElementById("terminal-settings-btn").addEventListener("click", openTerminalSettingsModal);
-  document.getElementById("terminal-settings-cancel").addEventListener("click", closeTerminalSettingsModal);
-  document.getElementById("terminal-settings-form").addEventListener("submit", (event) => {
-    event.preventDefault();
-    terminalSettings.fontSize = parseInt(document.getElementById("terminal-font-size").value, 10);
-    terminalSettings.scrollback = parseInt(document.getElementById("terminal-scrollback").value, 10);
-    applyTerminalSettings();
-    closeTerminalSettingsModal();
-    showToast("Terminal settings updated.", "success");
-  });
-  document.getElementById("terminal-search-btn").addEventListener("click", openTerminalSearch);
-  document.getElementById("terminal-search-close").addEventListener("click", closeTerminalSearch);
-  document.getElementById("terminal-search-next").addEventListener("click", () => searchTerminal("next"));
-  document.getElementById("terminal-search-prev").addEventListener("click", () => searchTerminal("previous"));
-  document.getElementById("terminal-search-input").addEventListener("input", () => searchTerminal("next"));
-  
-  document.getElementById("focus-btn").addEventListener("click", toggleFocusMode);
-  document.getElementById("exit-focus-btn").addEventListener("click", toggleFocusMode);
-  document.getElementById("focus-toggle-btn").addEventListener("click", toggleFocusMode);
-  document.getElementById("terminal-bg-toggle").addEventListener("click", toggleTerminalBackground);
-  document.getElementById("reconnect-btn").addEventListener("click", () => {
-    const session = getActiveSession();
-    if (session?.server) {
-      connectToServer(session.server.id);
+  try {
+    initTheme();
+    initTabs();
+    initAboutModal().catch((error) => console.error("About modal init failed:", error));
+    disableInputCorrections();
+    setupWindowCloseGuard();
+    if (!SearchAddonCtor) {
+      document.getElementById("terminal-search-btn")?.classList.add("hidden");
     }
-  });
-  document.getElementById("server-key-browse-btn").addEventListener("click", () => {
-    document.getElementById("server-key-file").click();
-  });
-  document.getElementById("server-key-file").addEventListener("change", async (event) => {
-    const [file] = event.target.files || [];
-    if (!file) return;
-    const content = await file.text();
-    document.getElementById("server-key").value = content;
-    showToast(`Loaded key file: ${file.name}`, "success");
-  });
-  document.getElementById("close-app-cancel").addEventListener("click", () => resolveCloseAppConfirm(false));
-  document.getElementById("close-app-confirm").addEventListener("click", () => resolveCloseAppConfirm(true));
+    
+    document.getElementById("theme-toggle")?.addEventListener("click", toggleTheme);
+    document.getElementById("terminal-settings-btn")?.addEventListener("click", openTerminalSettingsModal);
+    document.getElementById("terminal-settings-cancel")?.addEventListener("click", closeTerminalSettingsModal);
+    document.getElementById("terminal-settings-form")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const fontSizeInput = document.getElementById("terminal-font-size");
+      const scrollbackInput = document.getElementById("terminal-scrollback");
+      if (!fontSizeInput || !scrollbackInput) return;
+      terminalSettings.fontSize = parseInt(fontSizeInput.value, 10);
+      terminalSettings.scrollback = parseInt(scrollbackInput.value, 10);
+      applyTerminalSettings();
+      closeTerminalSettingsModal();
+      showToast("Terminal settings updated.", "success");
+    });
+    document.getElementById("terminal-search-btn")?.addEventListener("click", openTerminalSearch);
+    document.getElementById("terminal-search-close")?.addEventListener("click", closeTerminalSearch);
+    document.getElementById("terminal-search-next")?.addEventListener("click", () => searchTerminal("next"));
+    document.getElementById("terminal-search-prev")?.addEventListener("click", () => searchTerminal("previous"));
+    document.getElementById("terminal-search-input")?.addEventListener("input", () => searchTerminal("next"));
+    
+    document.getElementById("focus-btn")?.addEventListener("click", toggleFocusMode);
+    document.getElementById("exit-focus-btn")?.addEventListener("click", toggleFocusMode);
+    document.getElementById("focus-toggle-btn")?.addEventListener("click", toggleFocusMode);
+    document.getElementById("terminal-bg-toggle")?.addEventListener("click", toggleTerminalBackground);
+    document.getElementById("reconnect-btn")?.addEventListener("click", () => {
+      const session = getActiveSession();
+      if (session?.server) {
+        connectToServer(session.server.id);
+      }
+    });
+    document.getElementById("server-key-browse-btn")?.addEventListener("click", () => {
+      document.getElementById("server-key-file")?.click();
+    });
+    document.getElementById("server-key-file")?.addEventListener("change", async (event) => {
+      const [file] = event.target.files || [];
+      if (!file) return;
+      const content = await file.text();
+      const keyInput = document.getElementById("server-key");
+      if (keyInput) {
+        keyInput.value = content;
+      }
+      showToast(`Loaded key file: ${file.name}`, "success");
+    });
+    document.getElementById("close-app-cancel")?.addEventListener("click", () => resolveCloseAppConfirm(false));
+    document.getElementById("close-app-confirm")?.addEventListener("click", () => resolveCloseAppConfirm(true));
 
-  const serverFilterInput = document.getElementById("server-filter");
-  if (serverFilterInput) {
-    serverFilterInput.addEventListener("input", (event) => {
-      serverFilterTerm = event.target.value || "";
-      renderServerList();
-    });
-  }
+    const serverFilterInput = document.getElementById("server-filter");
+    if (serverFilterInput) {
+      serverFilterInput.addEventListener("input", (event) => {
+        serverFilterTerm = event.target.value || "";
+        renderServerList();
+      });
+    }
 
-  // Clear log
-  document.getElementById("clear-log-btn").addEventListener("click", () => {
-      connectionLog = [];
-      const listEl = document.getElementById("connection-log-list");
-      if (listEl) listEl.innerHTML = "";
-  });
+    document.getElementById("clear-log-btn")?.addEventListener("click", () => {
+        connectionLog = [];
+        const listEl = document.getElementById("connection-log-list");
+        if (listEl) listEl.innerHTML = "";
+    });
 
-  initTerminal();
-  applyTerminalSettings();
-  
-  document.getElementById("add-server-btn").addEventListener("click", openModal);
-  
-  document.getElementById("cancel-btn").addEventListener("click", closeModal);
-  document.getElementById("server-form").addEventListener("submit", saveServer);
-  document.getElementById("disconnect-btn").addEventListener("click", () => disconnectFromServer(null, { requireConfirm: true }));
-  document.getElementById("delete-cancel-btn").addEventListener("click", closeDeleteModal);
-  document.getElementById("delete-confirm-btn").addEventListener("click", confirmDeleteServer);
-  document.getElementById("disconnect-cancel-btn")?.addEventListener("click", () => resolveDisconnectConfirm(false));
-  document.getElementById("disconnect-confirm-btn")?.addEventListener("click", () => resolveDisconnectConfirm(true));
-  const disconnectModal = document.getElementById("disconnect-confirm-modal");
-  if (disconnectModal) {
-    disconnectModal.addEventListener("click", (event) => {
-      if (event.target === disconnectModal) {
-        resolveDisconnectConfirm(false);
-      }
-    });
-  }
-  const deleteModal = document.getElementById("delete-confirm-modal");
-  if (deleteModal) {
-    deleteModal.addEventListener("click", (event) => {
-      if (event.target === deleteModal) {
-        closeDeleteModal();
-      }
-    });
-  }
-  const terminalSettingsModal = document.getElementById("terminal-settings-modal");
-  if (terminalSettingsModal) {
-    terminalSettingsModal.addEventListener("click", (event) => {
-      if (event.target === terminalSettingsModal) {
-        closeTerminalSettingsModal();
-      }
-    });
-  }
-  const closeAppModal = document.getElementById("close-app-modal");
-  if (closeAppModal) {
-    closeAppModal.addEventListener("click", (event) => {
-      if (event.target === closeAppModal) {
-        resolveCloseAppConfirm(false);
-      }
-    });
-  }
-  document.getElementById("server-list").addEventListener("click", (e) => {
+    initTerminal();
+    applyTerminalSettings();
+    
+    document.getElementById("add-server-btn")?.addEventListener("click", openModal);
+    
+    document.getElementById("cancel-btn")?.addEventListener("click", closeModal);
+    document.getElementById("server-form")?.addEventListener("submit", saveServer);
+    document.getElementById("disconnect-btn")?.addEventListener("click", () => disconnectFromServer(null, { requireConfirm: true }));
+    document.getElementById("delete-cancel-btn")?.addEventListener("click", closeDeleteModal);
+    document.getElementById("delete-confirm-btn")?.addEventListener("click", confirmDeleteServer);
+    document.getElementById("disconnect-cancel-btn")?.addEventListener("click", () => resolveDisconnectConfirm(false));
+    document.getElementById("disconnect-confirm-btn")?.addEventListener("click", () => resolveDisconnectConfirm(true));
+    const disconnectModal = document.getElementById("disconnect-confirm-modal");
+    if (disconnectModal) {
+      disconnectModal.addEventListener("click", (event) => {
+        if (event.target === disconnectModal) {
+          resolveDisconnectConfirm(false);
+        }
+      });
+    }
+    const deleteModal = document.getElementById("delete-confirm-modal");
+    if (deleteModal) {
+      deleteModal.addEventListener("click", (event) => {
+        if (event.target === deleteModal) {
+          closeDeleteModal();
+        }
+      });
+    }
+    const terminalSettingsModal = document.getElementById("terminal-settings-modal");
+    if (terminalSettingsModal) {
+      terminalSettingsModal.addEventListener("click", (event) => {
+        if (event.target === terminalSettingsModal) {
+          closeTerminalSettingsModal();
+        }
+      });
+    }
+    const closeAppModal = document.getElementById("close-app-modal");
+    if (closeAppModal) {
+      closeAppModal.addEventListener("click", (event) => {
+        if (event.target === closeAppModal) {
+          resolveCloseAppConfirm(false);
+        }
+      });
+    }
+    document.getElementById("server-list")?.addEventListener("click", (e) => {
     const target = e.target;
     const button = target.closest("button");
     const item = target.closest(".server-item");
@@ -1656,10 +1737,10 @@ window.addEventListener("DOMContentLoaded", () => {
       deleteServer(id);
     }
   });
-  document.getElementById("add-snippet-btn").addEventListener("click", openSnippetModal);
-  document.getElementById("snippet-cancel-btn").addEventListener("click", closeSnippetModal);
-  document.getElementById("snippet-form").addEventListener("submit", saveSnippet);
-  document.getElementById("snippet-list").addEventListener("click", (e) => {
+    document.getElementById("add-snippet-btn")?.addEventListener("click", openSnippetModal);
+    document.getElementById("snippet-cancel-btn")?.addEventListener("click", closeSnippetModal);
+    document.getElementById("snippet-form")?.addEventListener("submit", saveSnippet);
+    document.getElementById("snippet-list")?.addEventListener("click", (e) => {
     const target = e.target;
     const button = target.closest("button");
     if (button) {
@@ -1687,7 +1768,7 @@ window.addEventListener("DOMContentLoaded", () => {
     const snippet = snippets.find((s) => s.id === id);
     if (snippet) executeSnippet(snippet);
   });
-  document.getElementById("auth-type").addEventListener("change", (e) => {
+    document.getElementById("auth-type")?.addEventListener("change", (e) => {
     if (e.target.value === "password") {
       document.getElementById("password-field").classList.remove("hidden");
       document.getElementById("key-field").classList.add("hidden");
@@ -1698,7 +1779,7 @@ window.addEventListener("DOMContentLoaded", () => {
   });
   
   // Keyboard shortcuts
-  document.addEventListener("keydown", (e) => {
+    document.addEventListener("keydown", (e) => {
     if (e.metaKey || e.ctrlKey) {
       if (e.key >= "1" && e.key <= "9") {
         e.preventDefault();
@@ -1741,10 +1822,10 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   });
   
-  loadServers();
-  loadSnippets();
+    loadServers();
+    loadSnippets();
 
-  listen("connection-state", (event) => {
+    listen("connection-state", (event) => {
     const { state, shellId: eventShellId, serverId: eventServerId } = normalizeConnectionEvent(event.payload);
 
     let session = getSessionByServerId(eventServerId) || getSessionByShellId(eventShellId);
@@ -1763,19 +1844,19 @@ window.addEventListener("DOMContentLoaded", () => {
     updateConnectionState(session, state);
   });
 
-  listen("host-key-prompt", (event) => {
+    listen("host-key-prompt", (event) => {
     openHostKeyModal(event.payload);
     logConnectionEvent("Host key prompt", `${event.payload.host}:${event.payload.port}`, "warning");
   });
 
-  listen("host-key-mismatch", (event) => {
+    listen("host-key-mismatch", (event) => {
     const payload = event.payload;
     const message = `Host key mismatch for ${payload.host}:${payload.port}`;
     showAlert("Host Key Mismatch", `${message}. Stored fingerprint: ${payload.stored_fingerprint}`);
     logConnectionEvent("Host key mismatch", `${payload.host}:${payload.port}`, "error");
   });
 
-  listen("terminal-output", (event) => {
+    listen("terminal-output", (event) => {
     const payload = typeof event.payload === 'string'
       ? { shell_id: null, output: event.payload }
       : event.payload;
@@ -1787,7 +1868,7 @@ window.addEventListener("DOMContentLoaded", () => {
     writeToSessionTerminal(session, payload.output || "");
   });
 
-  document.getElementById("host-key-trust").addEventListener("click", async () => {
+    document.getElementById("host-key-trust")?.addEventListener("click", async () => {
     if (!pendingHostKey) return;
     try {
       await invoke("trust_host_key", {
@@ -1803,7 +1884,7 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  document.getElementById("host-key-reject").addEventListener("click", async () => {
+    document.getElementById("host-key-reject")?.addEventListener("click", async () => {
     if (!pendingHostKey) return;
     try {
       await invoke("reject_host_key", {
@@ -1818,5 +1899,11 @@ window.addEventListener("DOMContentLoaded", () => {
       pendingHostKey = null;
       closeHostKeyModal();
     }
-  });
+    });
+  } catch (error) {
+    console.error("Startup error:", error);
+    showAlert("Startup Error", String(error));
+    loadServers();
+    loadSnippets();
+  }
 });

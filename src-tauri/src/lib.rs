@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use russh::client::{Config, Handle, Handler};
 use russh::keys;
 use russh::keys::PublicKeyBase64;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -122,7 +123,7 @@ fn load_snippets(app_dir: &Path) -> Result<Vec<Snippet>, String> {
     }
     let data = fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read snippets file: {}", e))?;
-    serde_json::from_str(&data).map_err(|e| format!("Failed to parse snippets file: {}", e))
+    parse_json_array_lenient(&data, "snippets")
 }
 
 fn save_snippets(app_dir: &Path, snippets: &Vec<Snippet>) -> Result<(), String> {
@@ -1284,6 +1285,39 @@ fn save_known_hosts(app_dir: &Path, hosts: &[KnownHost]) -> Result<(), String> {
     Ok(())
 }
 
+fn parse_json_array_lenient<T>(data: &str, label: &str) -> Result<Vec<T>, String>
+where
+    T: DeserializeOwned,
+{
+    match serde_json::from_str::<Vec<T>>(data) {
+        Ok(items) => Ok(items),
+        Err(primary_error) => {
+            let raw_items: Vec<serde_json::Value> = serde_json::from_str(data).map_err(|e| {
+                format!("Failed to parse {} file: {}", label, e)
+            })?;
+            let mut parsed = Vec::new();
+            let mut skipped = 0usize;
+            for item in raw_items {
+                match serde_json::from_value::<T>(item) {
+                    Ok(entry) => parsed.push(entry),
+                    Err(_) => skipped += 1,
+                }
+            }
+            if parsed.is_empty() {
+                Err(format!(
+                    "Failed to parse {} file: {}",
+                    label, primary_error
+                ))
+            } else {
+                if skipped > 0 {
+                    debug!(label, skipped, "Skipped malformed records while loading data");
+                }
+                Ok(parsed)
+            }
+        }
+    }
+}
+
 fn load_servers(app_dir: &Path, app: &AppHandle) -> Result<Vec<ServerConnection>, String> {
     let path = get_servers_path(app_dir);
     if !path.exists() {
@@ -1291,8 +1325,7 @@ fn load_servers(app_dir: &Path, app: &AppHandle) -> Result<Vec<ServerConnection>
     }
     let data = fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read servers file: {}", e))?;
-    let mut servers: Vec<ServerConnection> = serde_json::from_str(&data)
-        .map_err(|e| format!("Failed to deserialize servers: {}", e))?;
+    let mut servers: Vec<ServerConnection> = parse_json_array_lenient(&data, "servers")?;
 
     // Migrate any plaintext secrets into keyring
     let mut changed = false;

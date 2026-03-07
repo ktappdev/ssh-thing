@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SSH Thing</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="./assets/favicon-32.png" />
     <link rel="stylesheet" href="./vendor/tailwind.min.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
@@ -748,6 +749,79 @@
         color: var(--text-primary);
       }
 
+      .brand-lockup {
+        display: flex;
+        align-items: center;
+        gap: 0.875rem;
+      }
+
+      .brand-logo {
+        width: 2.75rem;
+        height: 2.75rem;
+        border-radius: 0.875rem;
+        background: linear-gradient(135deg, rgba(114, 135, 253, 0.16), rgba(30, 102, 245, 0.08));
+        border: 1px solid rgba(114, 135, 253, 0.16);
+        box-shadow: 0 10px 20px rgba(30, 102, 245, 0.14);
+        object-fit: contain;
+        padding: 0.35rem;
+        flex-shrink: 0;
+      }
+
+      .brand-copy {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+
+      .brand-title {
+        font-size: 1.125rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: var(--text-primary);
+        line-height: 1.15;
+      }
+
+      .brand-subtitle {
+        font-size: 0.6875rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-secondary);
+        line-height: 1.2;
+        margin-top: 0.25rem;
+      }
+
+      .about-logo {
+        width: 4.5rem;
+        height: 4.5rem;
+        border-radius: 1.25rem;
+        background: linear-gradient(135deg, rgba(114, 135, 253, 0.16), rgba(30, 102, 245, 0.08));
+        border: 1px solid rgba(114, 135, 253, 0.16);
+        padding: 0.6rem;
+        object-fit: contain;
+      }
+
+      .about-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 2.5rem;
+        padding: 0.625rem 0.875rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border-color);
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        font-size: 0.8125rem;
+        font-weight: 600;
+        transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+      }
+
+      .about-link:hover {
+        background: var(--bg-tertiary);
+        border-color: rgba(114, 135, 253, 0.3);
+        color: #1e66f5;
+      }
+
       .ghost-btn-primary {
         color: #7287fd;
       }
@@ -869,13 +943,23 @@
         <!-- Header -->
         <header id="header" class="flex justify-between items-center mb-4 flex-shrink-0 header-glass rounded-lg px-4 py-3">
           <div class="flex items-center gap-3">
-            <h1 class="text-xl font-bold text-gray-800 dark:text-white tracking-tight">SSH Thing</h1>
+            <div class="brand-lockup">
+              <img src="./assets/logo-square.png" alt="SSH Thing logo" class="brand-logo" />
+              <div class="brand-copy">
+                <h1 class="brand-title">SSH Thing</h1>
+                <div class="brand-subtitle">Tauri SSH Client</div>
+              </div>
+            </div>
             <div id="connection-status" class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
               Disconnected
             </div>
           </div>
           
           <div class="flex items-center gap-3">
+            <button id="about-btn" class="sleek-pill header-action-btn flex items-center gap-1.5 text-gray-700 dark:text-gray-200 rounded text-xs font-semibold uppercase tracking-wide shadow-sm border-none" title="About SSH Thing">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
+              <span>About</span>
+            </button>
             <button id="disconnect-btn" class="hidden header-action-btn flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white rounded text-sm transition-colors shadow-sm">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                 <span>Disconnect</span>
@@ -1200,6 +1284,34 @@
         <div class="dialog-actions">
           <button id="close-app-cancel" class="modal-btn border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700">Cancel</button>
           <button id="close-app-confirm" class="modal-btn bg-amber-500 hover:bg-amber-600 text-white">Close App</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="about-modal" class="hidden fixed inset-0 modal-backdrop z-50">
+      <div class="modal-content modal-panel w-[30rem] max-w-full mx-4 overflow-hidden">
+        <div class="modal-section">
+          <div class="flex items-start gap-4">
+            <img src="./assets/logo-square.png" alt="SSH Thing logo" class="about-logo" />
+            <div class="min-w-0 flex-1">
+              <div class="text-[10px] uppercase tracking-wide font-semibold text-gray-500 dark:text-gray-400">About</div>
+              <h3 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mt-1">SSH Thing</h3>
+              <p class="text-sm text-gray-600 dark:text-gray-400 mt-2">A desktop SSH client built with Tauri for fast terminal access and simple host management.</p>
+              <div class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                <span id="about-version">Version 0.1.0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-section">
+          <div class="modal-section-title">Links</div>
+          <div class="grid grid-cols-2 gap-3">
+            <button type="button" id="about-github" class="about-link">github.com/ktappdev</button>
+            <button type="button" id="about-twitter" class="about-link">@ktappdev</button>
+          </div>
+        </div>
+        <div class="px-5 py-4 flex justify-end gap-2 border-t border-gray-200/70 dark:border-gray-700/70">
+          <button type="button" id="about-close-btn" class="ghost-btn">Close</button>
         </div>
       </div>
     </div>
