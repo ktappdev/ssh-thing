@@ -57,22 +57,25 @@ SSH Thing is not code signed yet (no Apple Developer ID or Windows Authenticode 
 ### macOS (DMG install)
 
 1. Mount the `.dmg` and drag **SSH Thing** into **Applications**.
-2. **Immediately run this command** (removes the quarantine/xattr flags Gatekeeper adds to unsigned apps):
+2. If macOS says **“SSH THING” is damaged and can’t be opened**, that is Gatekeeper, not actual file corruption.
+3. Right now the macOS build is unsigned and not notarized. On recent macOS versions, that can show up as “is damaged and can’t be opened” instead of giving you the normal **Open Anyway** path.
+4. Try this after dragging it into **Applications**:
 
    ```bash
-   sudo xattr -cr /Applications/ssh-thing.app
+   sudo xattr -cr "/Applications/SSH THING.app"
    ```
 
-   This has been the most reliable way to launch on multiple Macs without needing a developer account.
-3. Launch the app from **Applications**. If macOS still warns you, either:
+5. If that still doesn’t do it, use the stricter form:
+
+   ```bash
+   sudo xattr -dr com.apple.quarantine "/Applications/SSH THING.app"
+   ```
+
+6. Launch the app from **Applications**. If macOS still warns you, either:
    - right-click → **Open** and confirm, or
    - go to **System Settings → Privacy & Security → Security → Open Anyway** after the first blocked attempt.
 
-For rare "app is damaged" dialogs, the stricter variant works too:
-
-```bash
-xattr -dr com.apple.quarantine /Applications/ssh-thing.app
-```
+This has been the most reliable way to launch on multiple Macs without needing a developer account.
 
 See `MACOS_INSTALL.md` for more background on the Gatekeeper flow.
 
