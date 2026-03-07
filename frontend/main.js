@@ -28,7 +28,7 @@ let localEchoEnabled = false;
 let terminalTransparent = false;
 let serverFilterTerm = "";
 let terminalSettings = loadTerminalSettings();
-let allowWindowClose = false;
+let closeRequestInProgress = false;
 let actionManager = null;
 
 function loadTerminalSettings() {
@@ -1578,18 +1578,22 @@ async function setupWindowCloseGuard() {
   if (!currentWindow?.onCloseRequested) return;
 
   await currentWindow.onCloseRequested(async (event) => {
-    if (allowWindowClose || !hasActiveConnections()) {
+    if (!hasActiveConnections()) {
       return;
     }
 
-    event.preventDefault();
+    if (closeRequestInProgress) {
+      event.preventDefault();
+      return;
+    }
+
+    closeRequestInProgress = true;
     const confirmed = await confirmCloseApp();
-    if (!confirmed) {
-      return;
-    }
+    closeRequestInProgress = false;
 
-    allowWindowClose = true;
-    currentWindow.close();
+    if (!confirmed) {
+      event.preventDefault();
+    }
   });
 }
 
