@@ -1,118 +1,157 @@
-name: Cross-Platform CI
+name: CI
 
 on:
   push:
-    branches: [ main, master ]
-    tags-ignore:
-      - 'v*'
+    branches:
+      - main
+      - master
   pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
-    name: Test on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest]
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          targets: ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || 'aarch64-apple-darwin' }}
-          components: rustfmt, clippy
-
-      - name: Install dependencies (Windows)
-        if: matrix.os == 'windows-latest'
+      - name: Install Linux dependencies
         run: |
-          rustup target add x86_64-pc-windows-msvc
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            pkg-config \
+            patchelf
 
-      - name: Cache Rust dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            src-tauri/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-
-      - name: Build project
-        working-directory: ./src-tauri
-        run: cargo build --target ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || 'aarch64-apple-darwin' }}
-
-      - name: Run tests
-        working-directory: ./src-tauri
-        run: cargo test --target ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || 'aarch64-apple-darwin' }}
-
-      - name: Run cargo check
-        working-directory: ./src-tauri
-        run: cargo check --target ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || 'aarch64-apple-darwin' }}
-
-  tauri-build:
-    name: Build Tauri app on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    needs: test
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest]
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          cache: npm
 
-      - name: Install Rust
+      - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          targets: ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || 'aarch64-apple-darwin' }}
+          components: rustfmt, clippy
 
-      - name: Install dependencies (Windows)
-        if: matrix.os == 'windows-latest'
-        run: |
-          rustup target add x86_64-pc-windows-msvc
-
-      - name: Cache Rust dependencies
+      - name: Cache cargo registry and build output
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
+            target
             src-tauri/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Install frontend dependencies
-        run: npm install
+      - name: Install npm dependencies
+        run: npm ci
 
-      - name: Build Tauri app (Windows)
-        if: matrix.os == 'windows-latest'
-        run: npm run tauri build -- --target x86_64-pc-windows-msvc
+      - name: Verify version consistency
+        run: |
+          node <<'EOF'
+          const fs = require("fs");
+          const packageJson = JSON.parse(fs.readFileSync("package.json", "utf8"));
+          const cargoToml = fs.readFileSync("Cargo.toml", "utf8");
+          const tauriConf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
+          const cargoVersionMatch = cargoToml.match(/^\[workspace\.package\][\s\S]*?^version\s*=\s*"([^"]+)"/m);
 
-      - name: Build Tauri app (macOS)
-        if: matrix.os == 'macos-latest'
-        run: npm run tauri build -- --target aarch64-apple-darwin
+          if (!cargoVersionMatch) {
+            console.error("Failed to read workspace.package.version from Cargo.toml");
+            process.exit(1);
+          }
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+          const versions = {
+            "package.json": packageJson.version,
+            "Cargo.toml": cargoVersionMatch[1],
+            "src-tauri/tauri.conf.json": tauriConf.version,
+          };
+
+          const unique = [...new Set(Object.values(versions))];
+          if (unique.length !== 1) {
+            console.error("Version mismatch detected:", versions);
+            process.exit(1);
+          }
+
+          console.log("Version check passed:", unique[0]);
+          EOF
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run tests
+        run: cargo test --workspace
+
+      - name: Run cargo check
+        run: cargo check --workspace
+
+  bundle-smoke:
+    name: Bundle smoke test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            pkg-config \
+            patchelf
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          name: tauri-app-${{ matrix.os }}
+          node-version: 20
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and build output
+        uses: actions/cache@v4
+        with:
           path: |
-            src-tauri/target/*/release/bundle/
-            src-tauri/target/release/bundle/
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build release bundle
+        run: npm run tauri build

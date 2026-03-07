@@ -12,6 +12,44 @@ SSH Thing is a cross-platform desktop SSH client built with Tauri, a Rust backen
 
 Have feature ideas or requests? Please open an issue in the **Issues** tab.
 
+## Releases with GitHub Actions
+
+GitHub builds release binaries when you push a version tag.
+
+1. Update the version in `package.json`, `Cargo.toml` (`[workspace.package]`), and `src-tauri/tauri.conf.json`.
+2. Commit the version bump to `main`.
+3. Create and push a matching tag:
+
+   ```bash
+   git tag v0.1.0
+   git push origin main --tags
+   ```
+
+The release workflow validates that the tag matches the checked-in version and then builds:
+- Linux: `.AppImage` and `.deb`
+- Windows: `.msi` and NSIS `.exe` if generated
+- macOS: `.dmg`
+
+Pull requests and branch pushes run CI separately for formatting, clippy, tests, `cargo check`, and a cross-platform Tauri bundle smoke test.
+
+To automate the version bump, commit, and tag creation, run:
+
+```bash
+./scripts/release-tag.sh 0.1.0
+```
+
+Or do the same and push immediately:
+
+```bash
+./scripts/release-tag.sh 0.1.0 --push
+```
+
+You can also run it through npm:
+
+```bash
+npm run release:tag -- 0.1.0 --push
+```
+
 ## Running unsigned builds (macOS & Windows)
 
 SSH Thing is not code signed yet (no Apple Developer ID or Windows Authenticode cert), so operating systems will treat fresh downloads as untrusted. Here is what to expect:

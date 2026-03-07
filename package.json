@@ -12,7 +12,8 @@
     "build:linux": "tauri build --target x86_64-unknown-linux-gnu",
     "build:deb": "tauri build --target x86_64-unknown-linux-gnu --bundler deb",
     "build:appimage": "tauri build --target x86_64-unknown-linux-gnu --bundler appimage",
-    "build:release": "./build-release.sh"
+    "build:release": "./build-release.sh",
+    "release:tag": "./scripts/release-tag.sh"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"
