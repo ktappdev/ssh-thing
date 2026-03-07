@@ -446,7 +446,6 @@ impl Default for PtyConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json;
 
     #[test]
     fn test_server_connection_serialization() {
@@ -658,7 +657,7 @@ mod tests {
     #[test]
     fn test_tracing_display_format() {
         let addr = format!("{}:{}", "localhost", 22);
-        let display_addr = format!("{}", addr);
+        let display_addr = addr.to_string();
 
         tracing::debug!(%display_addr, "Address formatting");
     }
