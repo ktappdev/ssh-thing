@@ -86,7 +86,7 @@
         width: 100%;
       }
 
-      .server-item, .snippet-item {
+      .server-item, .snippet-item, .action-item {
         transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
         animation: float-in 0.2s ease;
         padding: 0.625rem 0.75rem;
@@ -94,7 +94,7 @@
         min-height: 3rem;
       }
 
-      .server-item:hover, .snippet-item:hover {
+      .server-item:hover, .snippet-item:hover, .action-item:hover {
         transform: none;
         box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.1);
       }
@@ -106,6 +106,10 @@
       .snippet-item.status-connected {
         background: linear-gradient(135deg, rgba(114, 135, 253, 0.08), rgba(114, 135, 253, 0.03)) !important;
         border-color: rgba(114, 135, 253, 0.25) !important;
+      }
+      .action-item.status-running {
+        background: linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(16, 185, 129, 0.04)) !important;
+        border-color: rgba(14, 165, 233, 0.28) !important;
       }
       .server-item.status-connecting {
         background: linear-gradient(135deg, rgba(217, 119, 6, 0.06), rgba(217, 119, 6, 0.02)) !important;
@@ -123,6 +127,10 @@
       .dark .server-item.status-connected {
         background: linear-gradient(135deg, rgba(64, 160, 43, 0.08), rgba(64, 160, 43, 0.03)) !important;
         border-color: rgba(64, 160, 43, 0.25) !important;
+      }
+      .dark .action-item.status-running {
+        background: linear-gradient(135deg, rgba(56, 189, 248, 0.12), rgba(74, 222, 128, 0.05)) !important;
+        border-color: rgba(56, 189, 248, 0.32) !important;
       }
       .dark .server-item.status-connecting {
         background: linear-gradient(135deg, rgba(217, 119, 6, 0.08), rgba(217, 119, 6, 0.03)) !important;
@@ -645,6 +653,217 @@
       .dark .snippet-item .server-card-subtitle {
         color: #b4befe;
       }
+      .action-item .server-card-subtitle {
+        color: #0f766e;
+      }
+      .dark .action-item .server-card-subtitle {
+        color: #5eead4;
+      }
+      .action-accent {
+        width: 0.5rem;
+        min-width: 0.5rem;
+        height: 3rem;
+        border-radius: 999px;
+        background: linear-gradient(180deg, rgba(13, 148, 136, 0.85), rgba(14, 165, 233, 0.55));
+      }
+      .action-accent-live {
+        animation: pulse 1.5s ease-in-out infinite;
+      }
+      .action-command-preview {
+        margin-top: 0.45rem;
+        padding: 0.55rem 0.65rem;
+        border-radius: 0.625rem;
+        background: rgba(15, 23, 42, 0.05);
+        color: var(--text-primary);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.6875rem;
+        line-height: 1.45;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .action-empty-state {
+        min-height: 11rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 0.55rem;
+        padding: 1rem 0.5rem;
+      }
+      .action-empty-icon {
+        width: 2rem;
+        height: 2rem;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.9rem;
+        font-weight: 700;
+        background: rgba(13, 148, 136, 0.12);
+        color: #0f766e;
+      }
+      .dark .action-empty-icon {
+        color: #5eead4;
+      }
+      .action-empty-title {
+        font-size: 0.8125rem;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+      .action-empty-copy {
+        max-width: 16rem;
+        line-height: 1.45;
+        color: var(--text-secondary);
+      }
+      .dark .action-command-preview {
+        background: rgba(15, 23, 42, 0.32);
+      }
+      .action-meta-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin-top: 0.6rem;
+        font-size: 0.6875rem;
+        color: var(--text-secondary);
+      }
+      .action-meta-row > span:first-child {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .action-live-note {
+        margin-top: 0.45rem;
+        font-size: 0.6875rem;
+        color: #0891b2;
+      }
+      .action-missing-note {
+        margin-top: 0.45rem;
+        font-size: 0.6875rem;
+        color: #b45309;
+      }
+      .dark .action-missing-note {
+        color: #fcd34d;
+      }
+      .dark .action-live-note {
+        color: #67e8f9;
+      }
+      .action-status-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 4.25rem;
+        padding: 0.25rem 0.55rem;
+        border-radius: 999px;
+        font-size: 0.625rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .action-status-idle {
+        background: rgba(148, 163, 184, 0.16);
+        color: #64748b;
+      }
+      .action-status-success {
+        background: rgba(34, 197, 94, 0.14);
+        color: #15803d;
+      }
+      .action-status-error {
+        background: rgba(239, 68, 68, 0.14);
+        color: #b91c1c;
+      }
+      .action-status-running {
+        background: rgba(6, 182, 212, 0.14);
+        color: #0f766e;
+      }
+      .dark .action-status-idle {
+        color: #cbd5e1;
+      }
+      .dark .action-status-success {
+        color: #86efac;
+      }
+      .dark .action-status-error {
+        color: #fca5a5;
+      }
+      .dark .action-status-running {
+        color: #67e8f9;
+      }
+      .action-run-btn[disabled] {
+        opacity: 0.55;
+        cursor: not-allowed;
+        background: rgba(148, 163, 184, 0.12);
+        color: var(--text-secondary);
+      }
+      .action-run-btn[disabled]:hover {
+        background: rgba(148, 163, 184, 0.12);
+        color: var(--text-secondary);
+      }
+      .action-repair-btn {
+        color: #b45309;
+        background: rgba(245, 158, 11, 0.12);
+      }
+      .action-repair-btn:hover {
+        color: #92400e;
+        background: rgba(245, 158, 11, 0.18);
+      }
+      .dark .action-repair-btn {
+        color: #fcd34d;
+      }
+      .dark .action-repair-btn:hover {
+        color: #fde68a;
+        background: rgba(245, 158, 11, 0.2);
+      }
+      .action-history-entry {
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 0.875rem;
+        padding: 0.9rem;
+        background: rgba(255, 255, 255, 0.74);
+      }
+      .dark .action-history-entry {
+        background: rgba(24, 24, 37, 0.82);
+      }
+      .action-history-command,
+      .action-history-output,
+      .action-history-error,
+      .action-history-empty {
+        margin-top: 0.75rem;
+        border-radius: 0.625rem;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.6875rem;
+        line-height: 1.5;
+      }
+      .action-history-command {
+        padding: 0.65rem 0.75rem;
+        background: rgba(15, 23, 42, 0.05);
+      }
+      .dark .action-history-command {
+        background: rgba(15, 23, 42, 0.32);
+      }
+      .action-history-output {
+        max-height: 12rem;
+        overflow: auto;
+        padding: 0.75rem;
+        background: #0f172a;
+        color: #dbeafe;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .action-history-error {
+        padding: 0.65rem 0.75rem;
+        background: rgba(239, 68, 68, 0.08);
+        color: #b91c1c;
+      }
+      .dark .action-history-error {
+        color: #fecaca;
+      }
+      .action-history-empty {
+        padding: 0.65rem 0.75rem;
+        background: rgba(148, 163, 184, 0.08);
+        color: var(--text-secondary);
+      }
 
       .sidebar-header {
         background: rgba(255, 255, 255, 0.5);
@@ -808,7 +1027,9 @@
       }
 
       #server-list > .text-center,
-      #snippet-list > .text-center {
+      #snippet-list > .text-center,
+      #action-list > .text-center,
+      #action-history-list > .text-center {
         margin-top: 0 !important;
         min-height: 8rem;
         display: flex;
@@ -1015,6 +1236,9 @@
           <button id="tab-snippets" class="tab-btn flex-1 text-sm font-medium">
             Snippets
           </button>
+          <button id="tab-actions" class="tab-btn flex-1 text-sm font-medium">
+            Actions
+          </button>
         </div>
 
         <!-- Tab Content: Servers -->
@@ -1045,6 +1269,19 @@
           </div>
           <div class="sidebar-list flex-1 overflow-y-auto space-y-2" id="snippet-list">
             <!-- Snippet items will be injected here -->
+          </div>
+        </div>
+
+        <div id="view-actions" class="flex-1 flex flex-col min-h-0 hidden">
+          <div class="sidebar-section-header flex justify-between items-center border-b border-gray-200/60 dark:border-gray-700/50">
+            <span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Actions</span>
+            <button id="add-action-btn" class="ghost-btn ghost-btn-primary">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+              Add
+            </button>
+          </div>
+          <div class="sidebar-list flex-1 overflow-y-auto space-y-2" id="action-list">
+            <!-- Action items will be injected here -->
           </div>
         </div>
       </aside>
@@ -1380,6 +1617,69 @@
             <button type="submit" class="ghost-btn ghost-btn-success" style="background: rgba(64, 160, 43, 0.1);">Save Snippet</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <div id="action-modal" class="hidden fixed inset-0 modal-backdrop z-50">
+      <div class="modal-content modal-panel w-[30rem] max-w-full mx-4 overflow-hidden">
+        <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 id="action-modal-title" class="text-lg font-semibold text-gray-800 dark:text-gray-100">Add Action</h3>
+        </div>
+        <form id="action-form">
+          <input type="hidden" id="action-id" />
+
+          <div class="modal-section">
+            <div class="modal-section-title">Action Details</div>
+            <div class="space-y-3">
+              <div>
+                <label class="form-label">Name <span class="text-red-400">*</span></label>
+                <input type="text" id="action-name" required autocorrect="off" autocapitalize="off" spellcheck="false" class="form-input" placeholder="Restart API" />
+              </div>
+              <div>
+                <label class="form-label">Description</label>
+                <input type="text" id="action-description" autocorrect="off" autocapitalize="off" spellcheck="false" class="form-input" placeholder="What this action does" />
+              </div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">
+                Actions open a short-lived SSH session, run the command, capture output, then disconnect.
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="form-label">Server <span class="text-red-400">*</span></label>
+                  <select id="action-server" required class="form-select"></select>
+                </div>
+                <div>
+                  <label class="form-label">Timeout (seconds)</label>
+                  <input type="number" id="action-timeout" min="5" max="600" value="60" class="form-input" />
+                </div>
+              </div>
+              <div>
+                <label class="form-label">Command <span class="text-red-400">*</span></label>
+                <textarea id="action-command" rows="5" required autocorrect="off" autocapitalize="off" spellcheck="false" class="form-input font-mono text-xs" placeholder="sudo systemctl restart api && systemctl status api --no-pager"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <div class="px-5 py-4 flex justify-end gap-2 border-t border-gray-200/70 dark:border-gray-700/70">
+            <button type="button" id="action-cancel-btn" class="ghost-btn">Cancel</button>
+            <button type="submit" class="ghost-btn ghost-btn-primary" style="background: rgba(13, 148, 136, 0.12);">Save Action</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="action-history-modal" class="hidden fixed inset-0 modal-backdrop z-50">
+      <div class="modal-content modal-panel w-[40rem] max-w-full mx-4 overflow-hidden">
+        <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3">
+          <div>
+            <div class="text-[10px] uppercase tracking-wide font-semibold text-gray-500 dark:text-gray-400">Recent Runs</div>
+            <h3 id="action-history-title" class="text-lg font-semibold text-gray-800 dark:text-gray-100">Action History</h3>
+            <p id="action-history-summary" class="text-sm text-gray-600 dark:text-gray-400 mt-1">No runs recorded yet.</p>
+          </div>
+          <button type="button" id="action-history-close" class="ghost-btn">Close</button>
+        </div>
+        <div id="action-history-list" class="modal-section space-y-3 max-h-[28rem] overflow-y-auto">
+          <!-- Action history entries will be injected here -->
+        </div>
       </div>
     </div>
 

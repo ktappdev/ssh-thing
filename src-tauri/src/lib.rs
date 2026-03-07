@@ -1,3 +1,5 @@
+mod actions;
+
 use async_trait::async_trait;
 use keyring::Entry;
 use russh::client::{Config, Handle, Handler};
@@ -14,6 +16,10 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::time::{timeout, Duration};
 use tracing::{debug, info};
+
+pub use actions::{
+    add_action, delete_action, execute_action, get_action_history, get_actions, update_action,
+};
 
 const SERVERS_FILE: &str = "servers.json";
 const SNIPPETS_FILE: &str = "snippets.json";
@@ -1259,7 +1265,7 @@ fn get_known_hosts_path(app_dir: &Path) -> PathBuf {
     app_dir.join(KNOWN_HOSTS_FILE)
 }
 
-fn get_app_dir(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn get_app_dir(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_data_dir()
         .map_err(|e| format!("Failed to get app data directory: {}", e))
@@ -1288,7 +1294,7 @@ fn save_known_hosts(app_dir: &Path, hosts: &[KnownHost]) -> Result<(), String> {
     Ok(())
 }
 
-fn parse_json_array_lenient<T>(data: &str, label: &str) -> Result<Vec<T>, String>
+pub(crate) fn parse_json_array_lenient<T>(data: &str, label: &str) -> Result<Vec<T>, String>
 where
     T: DeserializeOwned,
 {
@@ -1320,7 +1326,10 @@ where
     }
 }
 
-fn load_servers(app_dir: &Path, app: &AppHandle) -> Result<Vec<ServerConnection>, String> {
+pub(crate) fn load_servers(
+    app_dir: &Path,
+    app: &AppHandle,
+) -> Result<Vec<ServerConnection>, String> {
     let path = get_servers_path(app_dir);
     if !path.exists() {
         return Ok(Vec::new());
@@ -1620,6 +1629,12 @@ pub fn run() {
             add_snippet,
             update_snippet,
             delete_snippet,
+            get_actions,
+            add_action,
+            update_action,
+            delete_action,
+            get_action_history,
+            execute_action,
             upsert_secret,
             trust_host_key,
             reject_host_key,

@@ -1,4 +1,5 @@
 import { initAboutModal } from "./components/about-modal.js";
+import { initActionManager } from "./components/actions-manager.js";
 import { initHeaderMenu } from "./components/header-menu.js";
 
 const { invoke } = window.__TAURI__.core;
@@ -28,6 +29,7 @@ let terminalTransparent = false;
 let serverFilterTerm = "";
 let terminalSettings = loadTerminalSettings();
 let allowWindowClose = false;
+let actionManager = null;
 
 function loadTerminalSettings() {
   try {
@@ -457,15 +459,17 @@ function removeWelcomeSession() {
   }
 }
 
-async function confirmDeleteServer() {
+async function confirmDeleteTarget() {
   if (!pendingDeleteTarget) return;
-  const { kind, id } = pendingDeleteTarget;
+  const { kind, id, onConfirm } = pendingDeleteTarget;
   closeDeleteModal();
   try {
-    if (kind === "server") {
+    if (typeof onConfirm === "function") {
+      await onConfirm(id);
+    } else if (kind === "server") {
       await invoke("delete_server", { id });
       loadServers();
-    } else {
+    } else if (kind === "snippet") {
       await invoke("delete_snippet", { id });
       loadSnippets();
     }
@@ -494,17 +498,21 @@ function openHostKeyModal(prompt) {
   document.getElementById("host-key-modal").classList.remove("hidden");
 }
 
-function openDeleteModal({ kind, id, label }) {
+function openDeleteModal({ kind, id, label, onConfirm = null }) {
   const modal = document.getElementById("delete-confirm-modal");
   const title = document.getElementById("delete-confirm-title");
   const message = document.getElementById("delete-confirm-message");
   if (title) {
-    title.textContent = kind === "snippet" ? "Delete snippet?" : "Delete host?";
+    title.textContent = kind === "snippet"
+      ? "Delete snippet?"
+      : kind === "action"
+        ? "Delete action?"
+        : "Delete host?";
   }
   if (message) {
     message.textContent = `Delete ${label}? This action cannot be undone.`;
   }
-  pendingDeleteTarget = { kind, id };
+  pendingDeleteTarget = { kind, id, onConfirm };
   modal?.classList.remove("hidden");
 }
 
@@ -743,6 +751,8 @@ async function loadServers() {
   try {
     servers = await invoke("get_servers");
     renderServerList();
+    actionManager?.renderActions();
+    actionManager?.refreshServerOptionsIfOpen();
   } catch (error) {
     console.error("Failed to load servers:", error);
     const listEl = document.getElementById("server-list");
@@ -1517,38 +1527,29 @@ async function deleteSnippet(id) {
 }
 
 function initTabs() {
-    const tabServers = document.getElementById('tab-servers');
-    const tabSnippets = document.getElementById('tab-snippets');
-    const viewServers = document.getElementById('view-servers');
-    const viewSnippets = document.getElementById('view-snippets');
+    const tabs = [
+      { key: "servers", button: document.getElementById("tab-servers"), view: document.getElementById("view-servers") },
+      { key: "snippets", button: document.getElementById("tab-snippets"), view: document.getElementById("view-snippets") },
+      { key: "actions", button: document.getElementById("tab-actions"), view: document.getElementById("view-actions") },
+    ].filter((tab) => tab.button && tab.view);
 
-    if (!tabServers || !tabSnippets) return;
+    if (tabs.length === 0) return;
 
-    function setActiveTab(tab) {
-        if (tab === 'servers') {
-            tabServers.classList.add('active');
-            tabServers.classList.remove('inactive');
-            tabSnippets.classList.add('inactive');
-            tabSnippets.classList.remove('active');
-            viewServers.classList.remove('hidden');
-            viewSnippets.classList.add('hidden');
-        } else {
-            tabSnippets.classList.add('active');
-            tabSnippets.classList.remove('inactive');
-            tabServers.classList.add('inactive');
-            tabServers.classList.remove('active');
-            viewSnippets.classList.remove('hidden');
-            viewServers.classList.add('hidden');
-        }
+    function setActiveTab(activeKey) {
+      tabs.forEach(({ key, button, view }) => {
+        const isActive = key === activeKey;
+        button.classList.toggle("active", isActive);
+        button.classList.toggle("inactive", !isActive);
+        view.classList.toggle("hidden", !isActive);
+      });
     }
 
-    tabServers.addEventListener('click', () => setActiveTab('servers'));
-    tabSnippets.addEventListener('click', () => setActiveTab('snippets'));
+    tabs.forEach(({ key, button }) => {
+      button.classList.add("tab-btn");
+      button.addEventListener("click", () => setActiveTab(key));
+    });
 
-    // initialize
-    tabServers.classList.add('tab-btn');
-    tabSnippets.classList.add('tab-btn');
-    setActiveTab('servers');
+    setActiveTab("servers");
 }
 
 function toggleFocusMode() {
@@ -1597,6 +1598,14 @@ window.addEventListener("DOMContentLoaded", () => {
     initTheme();
     initTabs();
     initHeaderMenu();
+    actionManager = initActionManager({
+      invoke,
+      listen,
+      getServers: () => servers,
+      showToast,
+      showAlert,
+      requestDelete: openDeleteModal,
+    });
     initAboutModal().catch((error) => console.error("About modal init failed:", error));
     disableInputCorrections();
     setupWindowCloseGuard();
@@ -1673,7 +1682,7 @@ window.addEventListener("DOMContentLoaded", () => {
     document.getElementById("server-form")?.addEventListener("submit", saveServer);
     document.getElementById("disconnect-btn")?.addEventListener("click", () => disconnectFromServer(null, { requireConfirm: true }));
     document.getElementById("delete-cancel-btn")?.addEventListener("click", closeDeleteModal);
-    document.getElementById("delete-confirm-btn")?.addEventListener("click", confirmDeleteServer);
+    document.getElementById("delete-confirm-btn")?.addEventListener("click", confirmDeleteTarget);
     document.getElementById("disconnect-cancel-btn")?.addEventListener("click", () => resolveDisconnectConfirm(false));
     document.getElementById("disconnect-confirm-btn")?.addEventListener("click", () => resolveDisconnectConfirm(true));
     const disconnectModal = document.getElementById("disconnect-confirm-modal");
@@ -1826,6 +1835,7 @@ window.addEventListener("DOMContentLoaded", () => {
   
     loadServers();
     loadSnippets();
+    actionManager.loadActions();
 
     listen("connection-state", (event) => {
     const { state, shellId: eventShellId, serverId: eventServerId } = normalizeConnectionEvent(event.payload);
