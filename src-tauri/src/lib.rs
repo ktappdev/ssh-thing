@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use keyring::Entry;
 use russh::client::{Config, Handle, Handler};
 use russh::keys;
 use russh::keys::PublicKeyBase64;
@@ -10,7 +11,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
-use keyring::Entry;
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::time::{timeout, Duration};
 use tracing::{debug, info};
@@ -79,7 +79,7 @@ async fn trust_host_key(app: AppHandle, id: String) -> Result<(), String> {
     // Use values from the pending struct, not arguments
     let host = pending.host;
     let port = pending.port;
-    
+
     hosts.retain(|h| !(h.host == host && h.port == port));
     let added_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -121,8 +121,8 @@ fn load_snippets(app_dir: &Path) -> Result<Vec<Snippet>, String> {
     if !path.exists() {
         return Ok(Vec::new());
     }
-    let data = fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read snippets file: {}", e))?;
+    let data =
+        fs::read_to_string(&path).map_err(|e| format!("Failed to read snippets file: {}", e))?;
     parse_json_array_lenient(&data, "snippets")
 }
 
@@ -201,7 +201,8 @@ impl Handler for SshClientHandler {
         let app_dir = match get_app_dir(&self.app) {
             Ok(dir) => dir,
             Err(err) => {
-                let _ = emit_connection_state(&self.app, server_id, None, ConnectionState::Error(err));
+                let _ =
+                    emit_connection_state(&self.app, server_id, None, ConnectionState::Error(err));
                 return Ok(false);
             }
         };
@@ -358,8 +359,12 @@ pub enum AuthMethod {
         kind: SecretKind,
     },
     // Legacy shapes kept for migration
-    Password { password: String },
-    Key { private_key: String },
+    Password {
+        password: String,
+    },
+    Key {
+        private_key: String,
+    },
 }
 
 pub type SshSession = Handle<SshClientHandler>;
@@ -909,30 +914,33 @@ pub async fn connect_ssh(
         server_id: server_id.map(|s| s.to_string()),
     };
     let connect_timeout = Duration::from_secs(timeout_seconds.unwrap_or(30).max(1));
-    let mut session = timeout(connect_timeout, russh::client::connect(config, addr, handler))
-        .await
-        .map_err(|_| {
-            let message = format!(
-                "Failed to connect: timed out after {} seconds",
-                connect_timeout.as_secs()
-            );
-            let _ = emit_connection_state(
-                app,
-                server_id,
-                None,
-                ConnectionState::Error(message.clone()),
-            );
-            message
-        })?
-        .map_err(|e| {
-            let _ = emit_connection_state(
-                app,
-                server_id,
-                None,
-                ConnectionState::Error(format!("Failed to connect: {}", e)),
-            );
-            format!("Failed to connect: {}", e)
-        })?;
+    let mut session = timeout(
+        connect_timeout,
+        russh::client::connect(config, addr, handler),
+    )
+    .await
+    .map_err(|_| {
+        let message = format!(
+            "Failed to connect: timed out after {} seconds",
+            connect_timeout.as_secs()
+        );
+        let _ = emit_connection_state(
+            app,
+            server_id,
+            None,
+            ConnectionState::Error(message.clone()),
+        );
+        message
+    })?
+    .map_err(|e| {
+        let _ = emit_connection_state(
+            app,
+            server_id,
+            None,
+            ConnectionState::Error(format!("Failed to connect: {}", e)),
+        );
+        format!("Failed to connect: {}", e)
+    })?;
 
     match auth {
         AuthMethod::SecretRef { secret_id, kind } => match kind {
@@ -1015,10 +1023,7 @@ pub async fn connect_ssh(
                         app,
                         server_id,
                         None,
-                        ConnectionState::Error(format!(
-                            "Authentication failed: {}",
-                            e
-                        )),
+                        ConnectionState::Error(format!("Authentication failed: {}", e)),
                     );
                     format!("Authentication failed: {}", e)
                 })?;
@@ -1268,8 +1273,7 @@ fn load_known_hosts(app_dir: &Path) -> Result<Vec<KnownHost>, String> {
     }
     let content =
         fs::read_to_string(&path).map_err(|e| format!("Failed to read known hosts file: {}", e))?;
-    serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse known hosts file: {}", e))
+    serde_json::from_str(&content).map_err(|e| format!("Failed to parse known hosts file: {}", e))
 }
 
 fn save_known_hosts(app_dir: &Path, hosts: &[KnownHost]) -> Result<(), String> {
@@ -1292,9 +1296,8 @@ where
     match serde_json::from_str::<Vec<T>>(data) {
         Ok(items) => Ok(items),
         Err(primary_error) => {
-            let raw_items: Vec<serde_json::Value> = serde_json::from_str(data).map_err(|e| {
-                format!("Failed to parse {} file: {}", label, e)
-            })?;
+            let raw_items: Vec<serde_json::Value> = serde_json::from_str(data)
+                .map_err(|e| format!("Failed to parse {} file: {}", label, e))?;
             let mut parsed = Vec::new();
             let mut skipped = 0usize;
             for item in raw_items {
@@ -1304,13 +1307,13 @@ where
                 }
             }
             if parsed.is_empty() {
-                Err(format!(
-                    "Failed to parse {} file: {}",
-                    label, primary_error
-                ))
+                Err(format!("Failed to parse {} file: {}", label, primary_error))
             } else {
                 if skipped > 0 {
-                    debug!(label, skipped, "Skipped malformed records while loading data");
+                    debug!(
+                        label,
+                        skipped, "Skipped malformed records while loading data"
+                    );
                 }
                 Ok(parsed)
             }
@@ -1323,8 +1326,8 @@ fn load_servers(app_dir: &Path, app: &AppHandle) -> Result<Vec<ServerConnection>
     if !path.exists() {
         return Ok(Vec::new());
     }
-    let data = fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read servers file: {}", e))?;
+    let data =
+        fs::read_to_string(&path).map_err(|e| format!("Failed to read servers file: {}", e))?;
     let mut servers: Vec<ServerConnection> = parse_json_array_lenient(&data, "servers")?;
 
     // Migrate any plaintext secrets into keyring
@@ -1360,7 +1363,10 @@ async fn upsert_secret(
 }
 
 #[tauri::command]
-async fn add_server(app: AppHandle, server: ServerConnection) -> Result<Vec<ServerConnection>, String> {
+async fn add_server(
+    app: AppHandle,
+    server: ServerConnection,
+) -> Result<Vec<ServerConnection>, String> {
     let app_dir = get_app_dir(&app)?;
     let mut servers = load_servers(&app_dir, &app)?;
     let mut server = server;
@@ -1471,20 +1477,22 @@ async fn delete_snippet(app: AppHandle, id: String) -> Result<Vec<Snippet>, Stri
 
 #[tauri::command]
 async fn connect(app: AppHandle, server: ServerConnection) -> Result<String, String> {
-    let session =
-        connect_ssh(
-            &app,
-            &server.host,
-            server.port,
-            &server.user,
-            &server.auth,
-            server.timeout_seconds,
-            Some(&server.id),
-        )
-            .await?;
+    let session = connect_ssh(
+        &app,
+        &server.host,
+        server.port,
+        &server.user,
+        &server.auth,
+        server.timeout_seconds,
+        Some(&server.id),
+    )
+    .await?;
     let app_dir = get_app_dir(&app)?;
     let mut persisted_servers = load_servers(&app_dir, &app)?;
-    if let Some(existing) = persisted_servers.iter_mut().find(|entry| entry.id == server.id) {
+    if let Some(existing) = persisted_servers
+        .iter_mut()
+        .find(|entry| entry.id == server.id)
+    {
         existing.last_connected_at = Some(
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
