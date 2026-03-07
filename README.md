@@ -1,89 +1,115 @@
 # SSH Thing
 
-SSH Thing is a cross-platform desktop SSH client built with Tauri, a Rust backend, and a vanilla HTML/JS frontend. It focuses on quick connections, clear session state, and a straightforward terminal experience, with small, fast binaries and minimal overhead.
+SSH Thing is a cross-platform desktop SSH client built with Tauri (Rust backend) and a vanilla HTML/JS frontend. It's designed for users who want a lightweight, focused tool that prioritizes the features they actually use — without the unnecessary bloat of larger SSH clients.
 
-![SSH Thing screenshot](./screen1.png)
+![SSH Thing screenshot](./screen1.jpg)
 
-### Highlights
-- Manage multiple saved servers with nicknames, users, and ports.
-- One-click connect/disconnect with clear status indicators.
-- Built-in host key prompts and basic credential storage.
-- Simple, keyboard-friendly terminal view for everyday SSH tasks.
+## Why SSH Thing?
 
-Have feature ideas or requests? Please open an issue in the **Issues** tab.
+I built SSH Thing because I was tired of SSH clients that tried to do everything under the sun. I wanted a tool that was:
+- **Lightweight**: Small executable size with minimal system overhead
+- **Focused**: Just the features I use daily — no unnecessary bells and whistles
+- **Fast**: Quick to start and responsive to use
+- **Simple**: Clean interface that gets out of the way
 
-## Releases with GitHub Actions
+SSH Thing isn't trying to be the most feature-rich SSH client. It's trying to be the best one for people who want to connect to servers quickly and reliably.
 
-GitHub builds release binaries when you push a version tag.
+## Features
 
-1. Update the version in `package.json`, `Cargo.toml` (`[workspace.package]`), and `src-tauri/tauri.conf.json`.
-2. Commit the version bump to `main`.
-3. Create and push a matching tag:
+### Core Functionality
+- **Server Management**: Save and organize your frequently used servers with nicknames, usernames, and port numbers
+- **One-Click Connections**: Connect and disconnect with a single click
+- **Clear Status Indicators**: Easy-to-read connection status and terminal feedback
+- **Terminal Experience**: Keyboard-friendly terminal with support for search, scrollback, and terminal settings
+- **Basic Credential Storage**: Securely store credentials using the system's native keychain
 
-   ```bash
-   git tag v0.1.0
-   git push origin main --tags
-   ```
+### Quality of Life Features
+- **Dark/Light Theme**: Toggle between dark and light modes
+- **Focus Mode**: Hide the sidebar and chrome to maximize terminal space
+- **Terminal Settings**: Customize font size and scrollback buffer
+- **Connection Log**: Keep track of your connection history
+- **Session Management**: Manage multiple concurrent SSH sessions
 
-The release workflow validates that the tag matches the checked-in version and then builds:
-- Linux: `.AppImage` and `.deb`
-- Windows: `.msi` and NSIS `.exe` if generated
-- macOS: `.dmg`
+## Download and Installation
 
-Pull requests and branch pushes run CI separately for formatting, clippy, tests, `cargo check`, and a cross-platform Tauri bundle smoke test.
+### Pre-built Binaries
 
-To automate the version bump, commit, and tag creation, run:
+Download the latest release from the [Releases page](https://github.com/yourusername/ssh-thing/releases).
 
-```bash
-./scripts/release-tag.sh 0.1.0
-```
+### Code Signing Workaround
 
-Or do the same and push immediately:
+SSH Thing is not currently code signed (no Apple Developer ID or Windows Authenticode certificate), so your operating system may treat it as untrusted. Here's how to work around this:
 
-```bash
-./scripts/release-tag.sh 0.1.0 --push
-```
-
-You can also run it through npm:
-
-```bash
-npm run release:tag -- 0.1.0 --push
-```
-
-## Running unsigned builds (macOS & Windows)
-
-SSH Thing is not code signed yet (no Apple Developer ID or Windows Authenticode cert), so operating systems will treat fresh downloads as untrusted. Here is what to expect:
-
-### macOS (DMG install)
-
-1. Mount the `.dmg` and drag **SSH Thing** into **Applications**.
-2. If macOS says **“SSH THING” is damaged and can’t be opened**, that is Gatekeeper, not actual file corruption.
-3. Right now the macOS build is unsigned and not notarized. On recent macOS versions, that can show up as “is damaged and can’t be opened” instead of giving you the normal **Open Anyway** path.
-4. Try this after dragging it into **Applications**:
-
+#### macOS (DMG Install)
+1. Mount the `.dmg` file and drag **SSH Thing** into your **Applications** folder
+2. If macOS says "SSH THING is damaged and can't be opened", open Terminal and run:
    ```bash
    sudo xattr -cr "/Applications/SSH THING.app"
    ```
+3. Launch SSH Thing from **Applications**
+4. If you still see a warning, right-click the app and select **Open**
 
-5. If that still doesn’t do it, use the stricter form:
+#### Windows (SmartScreen)
+1. Download and run the `.msi` installer
+2. If Windows Defender SmartScreen blocks the install:
+   - Click **More info**
+   - Click **Run anyway** to continue the installation
 
+## Building from Source
+
+If you'd like to build SSH Thing from source, follow these steps:
+
+### Prerequisites
+- **Rust**: Install Rust from [rust-lang.org](https://www.rust-lang.org/)
+- **Tauri**: Follow the [Tauri setup guide](https://tauri.app/v1/guides/getting-started/prerequisites/)
+
+### Build Instructions
+1. Clone the repository:
    ```bash
-   sudo xattr -dr com.apple.quarantine "/Applications/SSH THING.app"
+   git clone https://github.com/yourusername/ssh-thing.git
+   cd ssh-thing
+   ```
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Run the app in development mode:
+   ```bash
+   npm run tauri dev
+   ```
+4. Build the app for production:
+   ```bash
+   npm run tauri build
    ```
 
-6. Launch the app from **Applications**. If macOS still warns you, either:
-   - right-click → **Open** and confirm, or
-   - go to **System Settings → Privacy & Security → Security → Open Anyway** after the first blocked attempt.
+## Usage
 
-This has been the most reliable way to launch on multiple Macs without needing a developer account.
+### Adding a Server
+1. Click the **Add** button in the Servers tab
+2. Enter the server details:
+   - **Nickname**: A friendly name for the server
+   - **Host**: The server's IP address or hostname
+   - **Port**: The SSH port (default: 22)
+   - **Username**: Your SSH username
+   - **Password/Private Key**: Choose your authentication method
+3. Click **Save**
 
-See `MACOS_INSTALL.md` for more background on the Gatekeeper flow.
+### Connecting to a Server
+1. Click on a server in the Servers list
+2. If prompted, enter your password or select your private key
+3. The terminal will connect and you'll see the remote shell prompt
 
-### Windows (SmartScreen)
+### Managing Snippets
+1. Click the **Snippets** tab
+2. Click **Add** to create a new snippet
+3. Enter a title and the command you want to save
+4. Click **Save**
+5. To use a snippet, click on it from the list — it will be pasted into the active terminal
 
-Unsigned `.msi/.exe` bundles can trigger Windows Defender SmartScreen. When the blue dialog appears:
+## Contributing
 
-1. Click **More info**.
-2. Press **Run anyway** to continue the install.
+If you'd like to contribute to SSH Thing, please feel free to open an issue or submit a pull request. Feature requests are also welcome!
 
-After the first approval, Windows will remember the decision for future launches.
+## License
+
+SSH Thing is open source software licensed under the [MIT License](LICENSE).
