@@ -55,7 +55,6 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-            src-tauri/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
@@ -71,4 +70,4 @@ jobs:
         with:
           name: ssh-thing-${{ matrix.os }}-${{ github.run_number }}
           if-no-files-found: error
-          path: src-tauri/target/release/bundle/
+          path: target/release/bundle/
