@@ -1,4 +1,5 @@
 import { initAboutModal } from "./components/about-modal.js";
+import { initHeaderMenu } from "./components/header-menu.js";
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -528,7 +529,7 @@ function toggleTerminalBackground() {
     terminalTransparent = !terminalTransparent;
   }
   document.body.classList.toggle('terminal-transparent', terminalTransparent && isDark);
-  const label = document.getElementById('terminal-bg-label');
+  const label = document.getElementById('header-terminal-bg-label');
   if (label) {
     label.textContent = terminalTransparent && isDark ? 'Glass' : 'Solid';
   }
@@ -1595,6 +1596,7 @@ window.addEventListener("DOMContentLoaded", () => {
   try {
     initTheme();
     initTabs();
+    initHeaderMenu();
     initAboutModal().catch((error) => console.error("About modal init failed:", error));
     disableInputCorrections();
     setupWindowCloseGuard();

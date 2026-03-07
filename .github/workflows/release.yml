@@ -138,16 +138,46 @@ jobs:
         run: |
           find target -type f \( -name "*.dmg" -o -name "*.msi" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" \) | sort || true
 
+      - name: Collect release assets
+        id: collect_assets
+        shell: bash
+        run: |
+          shopt -s nullglob globstar
+          files=()
+
+          while IFS= read -r pattern; do
+            [[ -z "$pattern" ]] && continue
+            matches=( $pattern )
+            if (( ${#matches[@]} > 0 )); then
+              files+=("${matches[@]}")
+            fi
+          done <<'EOF'
+          ${{ matrix.asset_glob }}
+          EOF
+
+          if (( ${#files[@]} == 0 )); then
+            echo "No release assets found for ${{ matrix.name }}" >&2
+            exit 1
+          fi
+
+          unique_files="$(printf '%s\n' "${files[@]}" | awk '!seen[$0]++')"
+
+          {
+            echo 'files<<EOF'
+            printf '%s\n' "$unique_files"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ssh-thing-${{ matrix.name }}
           if-no-files-found: error
-          path: ${{ matrix.asset_glob }}
+          path: ${{ steps.collect_assets.outputs.files }}
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           fail_on_unmatched_files: true
-          files: ${{ matrix.asset_glob }}
+          files: ${{ steps.collect_assets.outputs.files }}

@@ -169,6 +169,109 @@
         border-color: rgba(69, 71, 90, 0.55);
       }
 
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .header-menu-wrap {
+        position: relative;
+      }
+
+      .header-menu-panel {
+        position: absolute;
+        right: 0;
+        top: calc(100% + 0.625rem);
+        width: 17rem;
+        background: rgba(255, 255, 255, 0.96);
+        border: 1px solid rgba(204, 208, 218, 0.95);
+        border-radius: 0.875rem;
+        box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18);
+        backdrop-filter: blur(12px);
+        padding: 0.5rem;
+      }
+
+      .dark .header-menu-panel {
+        background: rgba(24, 24, 37, 0.96);
+        border-color: rgba(69, 71, 90, 0.9);
+        box-shadow: 0 24px 48px rgba(0, 0, 0, 0.38);
+      }
+
+      .header-menu-section {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+      }
+
+      .header-menu-section + .header-menu-section {
+        margin-top: 0.375rem;
+        padding-top: 0.375rem;
+        border-top: 1px solid rgba(204, 208, 218, 0.8);
+      }
+
+      .dark .header-menu-section + .header-menu-section {
+        border-top-color: rgba(69, 71, 90, 0.8);
+      }
+
+      .header-menu-item {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.75rem 0.875rem;
+        border: none;
+        border-radius: 0.75rem;
+        background: transparent;
+        color: var(--text-primary);
+        transition: background-color 0.15s ease, color 0.15s ease;
+        text-align: left;
+      }
+
+      .header-menu-item:hover {
+        background: rgba(114, 135, 253, 0.1);
+      }
+
+      .dark .header-menu-item:hover {
+        background: rgba(137, 180, 250, 0.14);
+      }
+
+      .header-menu-item-main {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        min-width: 0;
+      }
+
+      .header-menu-item-copy {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+
+      .header-menu-item-title {
+        font-size: 0.8125rem;
+        font-weight: 600;
+        line-height: 1.15;
+      }
+
+      .header-menu-item-subtitle {
+        font-size: 0.6875rem;
+        color: var(--text-secondary);
+        line-height: 1.15;
+      }
+
+      .header-menu-item-value {
+        font-size: 0.6875rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-secondary);
+      }
+
       .sidebar-surface {
         background: linear-gradient(180deg, var(--bg-secondary), var(--bg-tertiary));
       }
@@ -954,11 +1057,7 @@
             </div>
           </div>
           
-          <div class="flex items-center gap-3">
-            <button id="about-btn" class="sleek-pill header-action-btn flex items-center gap-1.5 text-gray-700 dark:text-gray-200 rounded text-xs font-semibold uppercase tracking-wide shadow-sm border-none" title="About SSH THING">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
-              <span>About</span>
-            </button>
+          <div class="header-actions">
             <button id="disconnect-btn" class="hidden header-action-btn flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white rounded text-sm transition-colors shadow-sm">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                 <span>Disconnect</span>
@@ -966,22 +1065,6 @@
             <button id="reconnect-btn" class="hidden header-action-btn flex items-center gap-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded text-sm transition-colors shadow-sm">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v6h6M20 20v-6h-6M5.64 18.36A9 9 0 1021 12"/></svg>
               <span>Reconnect</span>
-            </button>
-            <button id="terminal-search-btn" class="sleek-pill header-action-btn flex items-center gap-1.5 text-gray-700 dark:text-gray-200 rounded text-xs font-semibold uppercase tracking-wide shadow-sm border-none" title="Search terminal">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m21 21-4.35-4.35M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15z"/></svg>
-              <span>Search</span>
-            </button>
-            <button id="terminal-settings-btn" class="sleek-pill header-action-btn flex items-center gap-1.5 text-gray-700 dark:text-gray-200 rounded text-xs font-semibold uppercase tracking-wide shadow-sm border-none" title="Terminal settings">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317a1 1 0 0 1 1.35-.936l.906.389a1 1 0 0 0 .832 0l.906-.389a1 1 0 0 1 1.35.936l.068.998a1 1 0 0 0 .564.826l.841.456a1 1 0 0 1 .42 1.36l-.458.84a1 1 0 0 0 0 .832l.458.84a1 1 0 0 1-.42 1.36l-.841.456a1 1 0 0 0-.564.826l-.068.998a1 1 0 0 1-1.35.936l-.906-.389a1 1 0 0 0-.832 0l-.906.389a1 1 0 0 1-1.35-.936l-.068-.998a1 1 0 0 0-.564-.826l-.841-.456a1 1 0 0 1-.42-1.36l.458-.84a1 1 0 0 0 0-.832l-.458-.84a1 1 0 0 1 .42-1.36l.841-.456a1 1 0 0 0 .564-.826l.068-.998z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg>
-              <span>Terminal</span>
-            </button>
-            <button id="focus-toggle-btn" class="focus-toggle sleek-pill header-action-btn flex items-center gap-1.5 text-white rounded text-xs font-semibold uppercase tracking-wide shadow-sm border-none" title="Toggle focus mode">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
-              <span>Focus</span>
-            </button>
-            <button id="terminal-bg-toggle" class="sleek-pill header-action-btn flex items-center gap-1.5 text-gray-700 dark:text-gray-200 rounded text-xs font-semibold uppercase tracking-wide shadow-sm border-none" title="Toggle terminal background">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h2a1 1 0 011 1v16a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm14 0h2a1 1 0 011 1v16a1 1 0 01-1 1h-2a1 1 0 01-1-1V4a1 1 0 011-1zM7 12h10"/></svg>
-              <span id="terminal-bg-label">Solid</span>
             </button>
             <button id="theme-toggle" class="icon-toggle-btn rounded-md bg-white dark:bg-gray-800 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors shadow-sm border-none" title="Toggle theme">
               <svg id="sun-icon" class="w-5 h-5 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -991,6 +1074,64 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
               </svg>
             </button>
+            <div id="header-menu-wrap" class="header-menu-wrap">
+              <button id="header-menu-toggle" class="sleek-pill header-action-btn flex items-center gap-1.5 text-gray-700 dark:text-gray-200 rounded text-xs font-semibold uppercase tracking-wide shadow-sm border-none" title="Open header menu" aria-haspopup="true" aria-expanded="false">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16M4 12h16M4 17h16"/></svg>
+                <span>Menu</span>
+              </button>
+              <div id="header-menu" class="header-menu-panel hidden z-40">
+                <div class="header-menu-section">
+                  <button id="about-btn" class="header-menu-item" title="About SSH THING">
+                    <span class="header-menu-item-main">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
+                      <span class="header-menu-item-copy">
+                        <span class="header-menu-item-title">About</span>
+                        <span class="header-menu-item-subtitle">Version and project links</span>
+                      </span>
+                    </span>
+                  </button>
+                  <button id="terminal-search-btn" class="header-menu-item" title="Search terminal">
+                    <span class="header-menu-item-main">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m21 21-4.35-4.35M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15z"/></svg>
+                      <span class="header-menu-item-copy">
+                        <span class="header-menu-item-title">Search terminal</span>
+                        <span class="header-menu-item-subtitle">Find text in the active session</span>
+                      </span>
+                    </span>
+                  </button>
+                  <button id="terminal-settings-btn" class="header-menu-item" title="Terminal settings">
+                    <span class="header-menu-item-main">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317a1 1 0 0 1 1.35-.936l.906.389a1 1 0 0 0 .832 0l.906-.389a1 1 0 0 1 1.35.936l.068.998a1 1 0 0 0 .564.826l.841.456a1 1 0 0 1 .42 1.36l-.458.84a1 1 0 0 0 0 .832l.458.84a1 1 0 0 1-.42 1.36l-.841.456a1 1 0 0 0-.564.826l-.068.998a1 1 0 0 1-1.35.936l-.906-.389a1 1 0 0 0-.832 0l-.906.389a1 1 0 0 1-1.35-.936l-.068-.998a1 1 0 0 0-.564-.826l-.841-.456a1 1 0 0 1-.42-1.36l.458-.84a1 1 0 0 0 0-.832l-.458-.84a1 1 0 0 1 .42-1.36l.841-.456a1 1 0 0 0 .564-.826l.068-.998z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg>
+                      <span class="header-menu-item-copy">
+                        <span class="header-menu-item-title">Terminal settings</span>
+                        <span class="header-menu-item-subtitle">Font size and scrollback</span>
+                      </span>
+                    </span>
+                  </button>
+                </div>
+                <div class="header-menu-section">
+                  <button id="focus-toggle-btn" class="header-menu-item" title="Toggle focus mode">
+                    <span class="header-menu-item-main">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+                      <span class="header-menu-item-copy">
+                        <span class="header-menu-item-title">Focus mode</span>
+                        <span class="header-menu-item-subtitle">Hide chrome and expand terminal</span>
+                      </span>
+                    </span>
+                  </button>
+                  <button id="terminal-bg-toggle" class="header-menu-item" title="Toggle terminal background">
+                    <span class="header-menu-item-main">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h2a1 1 0 011 1v16a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm14 0h2a1 1 0 011 1v16a1 1 0 01-1 1h-2a1 1 0 01-1-1V4a1 1 0 011-1zM7 12h10"/></svg>
+                      <span class="header-menu-item-copy">
+                        <span class="header-menu-item-title">Terminal background</span>
+                        <span class="header-menu-item-subtitle">Switch between solid and glass</span>
+                      </span>
+                    </span>
+                    <span id="header-terminal-bg-label" class="header-menu-item-value">Solid</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </header>
 
