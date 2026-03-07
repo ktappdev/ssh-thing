@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ssh-thing",
+  "productName": "SSH THING",
   "version": "0.1.0",
   "identifier": "com.kentaylor.ssh-thing",
   "build": {
@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "SSH Thing",
+        "title": "SSH THING",
         "width": 1200,
         "height": 800,
         "minWidth": 1200,
@@ -48,7 +48,7 @@
     "resources": [
       "../MACOS_INSTALL.md"
     ],
-    "longDescription": "SSH Thing - A modern SSH client built with Tauri",
+    "longDescription": "SSH THING - A modern SSH client built with Tauri",
     "shortDescription": "SSH client application",
     "windows": {
       "certificateThumbprint": null,
