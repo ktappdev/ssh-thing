@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -19,13 +19,19 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          targets: ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || 'aarch64-apple-darwin' }}
+          targets: ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || matrix.os == 'ubuntu-latest' && 'x86_64-unknown-linux-gnu' || 'aarch64-apple-darwin' }}
           components: rustfmt, clippy
 
       - name: Install dependencies (Windows)
         if: matrix.os == 'windows-latest'
         run: |
           rustup target add x86_64-pc-windows-msvc
+
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev pkg-config build-essential libayatana-appindicator-dev
 
       - name: Cache Rust dependencies
         uses: actions/cache@v4
@@ -41,15 +47,15 @@ jobs:
 
       - name: Build project
         working-directory: ./src-tauri
-        run: cargo build --target ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || 'aarch64-apple-darwin' }}
+        run: cargo build --target ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || matrix.os == 'ubuntu-latest' && 'x86_64-unknown-linux-gnu' || 'aarch64-apple-darwin' }}
 
       - name: Run tests
         working-directory: ./src-tauri
-        run: cargo test --target ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || 'aarch64-apple-darwin' }}
+        run: cargo test --target ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || matrix.os == 'ubuntu-latest' && 'x86_64-unknown-linux-gnu' || 'aarch64-apple-darwin' }}
 
       - name: Run cargo check
         working-directory: ./src-tauri
-        run: cargo check --target ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || 'aarch64-apple-darwin' }}
+        run: cargo check --target ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || matrix.os == 'ubuntu-latest' && 'x86_64-unknown-linux-gnu' || 'aarch64-apple-darwin' }}
 
   tauri-build:
     name: Build Tauri app on ${{ matrix.os }}
@@ -58,7 +64,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -72,6 +78,12 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: |
           rustup target add x86_64-pc-windows-msvc
+
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev pkg-config build-essential libayatana-appindicator-dev
 
       - name: Install Tauri CLI
         working-directory: .
@@ -87,10 +99,15 @@ jobs:
         working-directory: ./src-tauri
         run: cargo tauri build --target aarch64-apple-darwin
 
+      - name: Build Tauri app (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: ./src-tauri
+        run: cargo tauri build --target x86_64-unknown-linux-gnu
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: tauri-app-${{ matrix.os }}
           path: |
-            target/${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || 'aarch64-apple-darwin' }}/release/bundle/
+            target/${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || matrix.os == 'ubuntu-latest' && 'x86_64-unknown-linux-gnu' || 'aarch64-apple-darwin' }}/release/bundle/
             target/release/bundle/

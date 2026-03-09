@@ -63,10 +63,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ssh-thing-${{ matrix.os }}-bundle
-          path: src-tauri/target/release/bundle/
+          path: |
+            target/release/bundle/
+            target/x86_64-unknown-linux-gnu/release/bundle/
 
       - name: Upload macOS install notes
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
           name: macos-install-notes
