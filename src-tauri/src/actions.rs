@@ -254,6 +254,7 @@ async fn run_action_command(
         &server.auth,
         server.timeout_seconds,
         None,
+        None,
     )
     .await?;
 
@@ -293,7 +294,7 @@ async fn run_action_command(
     }
     .await;
 
-    let _ = disconnect_ssh(app, Some(session), None).await;
+    let _ = disconnect_ssh(app, Some(session), None, None).await;
     action_result
 }
 

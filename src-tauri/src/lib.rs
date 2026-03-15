@@ -162,6 +162,7 @@ fn save_servers(app_dir: &Path, servers: &Vec<ServerConnection>) -> Result<(), S
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionStateEvent {
+    pub connection_id: Option<String>,
     pub server_id: Option<String>,
     pub shell_id: Option<String>,
     pub state: ConnectionState,
@@ -171,16 +172,19 @@ pub struct SshClientHandler {
     app: AppHandle,
     host: String,
     port: u16,
+    connection_id: Option<String>,
     server_id: Option<String>,
 }
 
 fn emit_connection_state(
     app: &AppHandle,
+    connection_id: Option<&str>,
     server_id: Option<&str>,
     shell_id: Option<&str>,
     state: ConnectionState,
 ) -> Result<(), String> {
     let payload = ConnectionStateEvent {
+        connection_id: connection_id.map(|s| s.to_string()),
         server_id: server_id.map(|s| s.to_string()),
         shell_id: shell_id.map(|s| s.to_string()),
         state,
@@ -204,13 +208,19 @@ impl Handler for SshClientHandler {
         let key_type = server_public_key.name().to_string();
         let fingerprint = server_public_key.fingerprint();
         let public_key_base64 = server_public_key.public_key_base64();
+        let connection_id = self.connection_id.as_deref();
         let server_id = self.server_id.as_deref();
 
         let app_dir = match get_app_dir(&self.app) {
             Ok(dir) => dir,
             Err(err) => {
-                let _ =
-                    emit_connection_state(&self.app, server_id, None, ConnectionState::Error(err));
+                let _ = emit_connection_state(
+                    &self.app,
+                    connection_id,
+                    server_id,
+                    None,
+                    ConnectionState::Error(err),
+                );
                 return Ok(false);
             }
         };
@@ -218,8 +228,13 @@ impl Handler for SshClientHandler {
         let known_hosts = match load_known_hosts(&app_dir) {
             Ok(hosts) => hosts,
             Err(err) => {
-                let _ =
-                    emit_connection_state(&self.app, server_id, None, ConnectionState::Error(err));
+                let _ = emit_connection_state(
+                    &self.app,
+                    connection_id,
+                    server_id,
+                    None,
+                    ConnectionState::Error(err),
+                );
                 return Ok(false);
             }
         };
@@ -377,9 +392,16 @@ pub enum AuthMethod {
 
 pub type SshSession = Handle<SshClientHandler>;
 
+pub struct ManagedSession {
+    pub connection_id: String,
+    pub server_id: String,
+    pub handle: SshSession,
+}
+
 #[derive(Debug, Clone)]
 pub struct PtyShell {
     pub id: String,
+    pub connection_id: String,
     pub server_id: String,
     cmd_tx: mpsc::Sender<ShellCommand>,
 }
@@ -401,6 +423,8 @@ pub struct Snippet {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TerminalOutput {
+    pub connection_id: Option<String>,
+    pub server_id: Option<String>,
     pub shell_id: String,
     pub output: String,
 }
@@ -794,6 +818,8 @@ mod tests {
     #[test]
     fn test_terminal_output_serialization() {
         let terminal_output = TerminalOutput {
+            connection_id: Some("conn-123".to_string()),
+            server_id: Some("server-123".to_string()),
             shell_id: "test-shell-123".to_string(),
             output: "test output data".to_string(),
         };
@@ -809,6 +835,8 @@ mod tests {
     #[test]
     fn test_terminal_output_with_multiline_output() {
         let terminal_output = TerminalOutput {
+            connection_id: Some("conn-456".to_string()),
+            server_id: Some("server-456".to_string()),
             shell_id: "shell-456".to_string(),
             output: "line1\r\nline2\r\nline3".to_string(),
         };
@@ -824,6 +852,8 @@ mod tests {
     #[test]
     fn test_terminal_output_empty_output() {
         let terminal_output = TerminalOutput {
+            connection_id: None,
+            server_id: None,
             shell_id: "shell-789".to_string(),
             output: "".to_string(),
         };
@@ -865,7 +895,7 @@ mod tests {
 }
 
 struct AppState {
-    sessions: Mutex<HashMap<String, SshSession>>,
+    sessions: Mutex<HashMap<String, ManagedSession>>,
     shells: Mutex<HashMap<String, PtyShell>>,
     pending_host_keys: Mutex<HashMap<String, PendingHostKey>>,
 }
@@ -886,6 +916,7 @@ pub async fn connect_ssh(
     user: &str,
     auth: &AuthMethod,
     timeout_seconds: Option<u64>,
+    connection_id: Option<&str>,
     server_id: Option<&str>,
 ) -> Result<SshSession, String> {
     let addr = format!("{}:{}", host, port);
@@ -903,7 +934,13 @@ pub async fn connect_ssh(
     #[cfg(debug_assertions)]
     debug!(host, port, user, auth_type, "Starting SSH connection");
 
-    emit_connection_state(app, server_id, None, ConnectionState::Connecting)?;
+    emit_connection_state(
+        app,
+        connection_id,
+        server_id,
+        None,
+        ConnectionState::Connecting,
+    )?;
 
     let config = Arc::new(Config {
         keepalive_interval: Some(Duration::from_secs(15)),
@@ -918,6 +955,7 @@ pub async fn connect_ssh(
         app: app.clone(),
         host: host.to_string(),
         port,
+        connection_id: connection_id.map(|s| s.to_string()),
         server_id: server_id.map(|s| s.to_string()),
     };
     let connect_timeout = Duration::from_secs(timeout_seconds.unwrap_or(30).max(1));
@@ -933,6 +971,7 @@ pub async fn connect_ssh(
         );
         let _ = emit_connection_state(
             app,
+            connection_id,
             server_id,
             None,
             ConnectionState::Error(message.clone()),
@@ -942,6 +981,7 @@ pub async fn connect_ssh(
     .map_err(|e| {
         let _ = emit_connection_state(
             app,
+            connection_id,
             server_id,
             None,
             ConnectionState::Error(format!("Failed to connect: {}", e)),
@@ -959,6 +999,7 @@ pub async fn connect_ssh(
                     .map_err(|e| {
                         let _ = emit_connection_state(
                             app,
+                            connection_id,
                             server_id,
                             None,
                             ConnectionState::Error(format!("Authentication failed: {}", e)),
@@ -969,6 +1010,7 @@ pub async fn connect_ssh(
                 if !auth_result {
                     let _ = emit_connection_state(
                         app,
+                        connection_id,
                         server_id,
                         None,
                         ConnectionState::Error("Password authentication failed".to_string()),
@@ -984,6 +1026,7 @@ pub async fn connect_ssh(
                 let key_pair = keys::decode_secret_key(&key_data, None).map_err(|e| {
                     let _ = emit_connection_state(
                         app,
+                        connection_id,
                         server_id,
                         None,
                         ConnectionState::Error(format!("Failed to decode private key: {}", e)),
@@ -997,6 +1040,7 @@ pub async fn connect_ssh(
                     .map_err(|e| {
                         let _ = emit_connection_state(
                             app,
+                            connection_id,
                             server_id,
                             None,
                             ConnectionState::Error(format!("Key authentication failed: {}", e)),
@@ -1007,6 +1051,7 @@ pub async fn connect_ssh(
                 if !auth_result {
                     let _ = emit_connection_state(
                         app,
+                        connection_id,
                         server_id,
                         None,
                         ConnectionState::Error("Key authentication failed".to_string()),
@@ -1026,11 +1071,12 @@ pub async fn connect_ssh(
                 .authenticate_password(user, password)
                 .await
                 .map_err(|e| {
-                    let _ = emit_connection_state(
-                        app,
-                        server_id,
-                        None,
-                        ConnectionState::Error(format!("Authentication failed: {}", e)),
+                let _ = emit_connection_state(
+                    app,
+                    connection_id,
+                    server_id,
+                    None,
+                    ConnectionState::Error(format!("Authentication failed: {}", e)),
                     );
                     format!("Authentication failed: {}", e)
                 })?;
@@ -1038,6 +1084,7 @@ pub async fn connect_ssh(
             if !auth_result {
                 let _ = emit_connection_state(
                     app,
+                    connection_id,
                     server_id,
                     None,
                     ConnectionState::Error("Password authentication failed".to_string()),
@@ -1055,6 +1102,7 @@ pub async fn connect_ssh(
             let key_pair = keys::decode_secret_key(private_key, None).map_err(|e| {
                 let _ = emit_connection_state(
                     app,
+                    connection_id,
                     server_id,
                     None,
                     ConnectionState::Error(format!("Failed to decode private key: {}", e)),
@@ -1066,11 +1114,12 @@ pub async fn connect_ssh(
                 .authenticate_publickey(user, Arc::new(key_pair))
                 .await
                 .map_err(|e| {
-                    let _ = emit_connection_state(
-                        app,
-                        server_id,
-                        None,
-                        ConnectionState::Error(format!("Key authentication failed: {}", e)),
+                let _ = emit_connection_state(
+                    app,
+                    connection_id,
+                    server_id,
+                    None,
+                    ConnectionState::Error(format!("Key authentication failed: {}", e)),
                     );
                     format!("Key authentication failed: {}", e)
                 })?;
@@ -1078,6 +1127,7 @@ pub async fn connect_ssh(
             if !auth_result {
                 let _ = emit_connection_state(
                     app,
+                    connection_id,
                     server_id,
                     None,
                     ConnectionState::Error("Key authentication failed".to_string()),
@@ -1093,7 +1143,13 @@ pub async fn connect_ssh(
     #[cfg(debug_assertions)]
     info!(host, port, user, "SSH connection established successfully");
 
-    emit_connection_state(app, server_id, None, ConnectionState::Connected)?;
+    emit_connection_state(
+        app,
+        connection_id,
+        server_id,
+        None,
+        ConnectionState::Connected,
+    )?;
 
     Ok(session)
 }
@@ -1101,6 +1157,7 @@ pub async fn connect_ssh(
 pub async fn disconnect_ssh(
     app: &AppHandle,
     session: Option<SshSession>,
+    connection_id: Option<&str>,
     server_id: Option<&str>,
 ) -> Result<(), String> {
     if let Some(s) = session {
@@ -1115,7 +1172,13 @@ pub async fn disconnect_ssh(
             debug!(server_id = server_id, "SSH disconnect timed out");
         }
     }
-    emit_connection_state(app, server_id, None, ConnectionState::Disconnected)?;
+    emit_connection_state(
+        app,
+        connection_id,
+        server_id,
+        None,
+        ConnectionState::Disconnected,
+    )?;
     Ok(())
 }
 
@@ -1123,12 +1186,19 @@ pub async fn open_pty_shell(
     app: &AppHandle,
     session: &mut SshSession,
     config: &PtyConfig,
+    connection_id: &str,
     server_id: &str,
 ) -> Result<PtyShell, String> {
     #[cfg(debug_assertions)]
     debug!(server_id, term = %config.term, width = config.width, height = config.height, "Opening PTY shell channel");
 
-    emit_connection_state(app, Some(server_id), None, ConnectionState::Connected)?;
+    emit_connection_state(
+        app,
+        Some(connection_id),
+        Some(server_id),
+        None,
+        ConnectionState::Connected,
+    )?;
 
     let channel = session
         .channel_open_session()
@@ -1156,6 +1226,7 @@ pub async fn open_pty_shell(
 
     let (cmd_tx, mut cmd_rx) = mpsc::channel::<ShellCommand>(100);
     let shell_id = uuid::Uuid::new_v4().to_string();
+    let connection_id_for_task = connection_id.to_string();
     let shell_id_for_task = shell_id.clone();
     let server_id_for_task = server_id.to_string();
     let mut channel_for_task = channel;
@@ -1163,6 +1234,7 @@ pub async fn open_pty_shell(
 
     emit_connection_state(
         app,
+        Some(connection_id),
         Some(server_id),
         Some(&shell_id),
         ConnectionState::Connected,
@@ -1179,6 +1251,8 @@ pub async fn open_pty_shell(
                         if !pending.is_empty() {
                             if let Ok(s) = std::str::from_utf8(&pending) {
                                 let payload = TerminalOutput {
+                                    connection_id: Some(connection_id_for_task.clone()),
+                                    server_id: Some(server_id_for_task.clone()),
                                     shell_id: shell_id_for_task.clone(),
                                     output: s.to_string(),
                                 };
@@ -1196,6 +1270,8 @@ pub async fn open_pty_shell(
                             if !filtered.is_empty() {
                                 if let Ok(s) = std::str::from_utf8(&filtered) {
                                     let payload = TerminalOutput {
+                                        connection_id: Some(connection_id_for_task.clone()),
+                                        server_id: Some(server_id_for_task.clone()),
                                         shell_id: shell_id_for_task.clone(),
                                         output: s.to_string(),
                                     };
@@ -1208,6 +1284,8 @@ pub async fn open_pty_shell(
                             if !pending.is_empty() {
                                 if let Ok(s) = std::str::from_utf8(&pending) {
                                     let payload = TerminalOutput {
+                                        connection_id: Some(connection_id_for_task.clone()),
+                                        server_id: Some(server_id_for_task.clone()),
                                         shell_id: shell_id_for_task.clone(),
                                         output: s.to_string(),
                                     };
@@ -1223,6 +1301,8 @@ pub async fn open_pty_shell(
                                 "Connection closed with exit status"
                             );
                             let payload = TerminalOutput {
+                                connection_id: Some(connection_id_for_task.clone()),
+                                server_id: Some(server_id_for_task.clone()),
                                 shell_id: shell_id_for_task.clone(),
                                 output,
                             };
@@ -1241,6 +1321,8 @@ pub async fn open_pty_shell(
                                 let _ = app_for_task.emit(
                                     "terminal-output",
                                     TerminalOutput {
+                                        connection_id: Some(connection_id_for_task.clone()),
+                                        server_id: Some(server_id_for_task.clone()),
                                         shell_id: shell_id_for_task.clone(),
                                         output: format!("\r\nFailed to send input: {}\r\n", e),
                                     },
@@ -1264,6 +1346,8 @@ pub async fn open_pty_shell(
                             if !pending.is_empty() {
                                 if let Ok(s) = std::str::from_utf8(&pending) {
                                     let payload = TerminalOutput {
+                                        connection_id: Some(connection_id_for_task.clone()),
+                                        server_id: Some(server_id_for_task.clone()),
                                         shell_id: shell_id_for_task.clone(),
                                         output: s.to_string(),
                                     };
@@ -1279,6 +1363,7 @@ pub async fn open_pty_shell(
         }
         let _ = emit_connection_state(
             &app_for_task,
+            Some(connection_id_for_task.as_str()),
             Some(server_id_for_task.as_str()),
             Some(shell_id_for_task.as_str()),
             ConnectionState::Disconnected,
@@ -1287,6 +1372,7 @@ pub async fn open_pty_shell(
 
     let shell = PtyShell {
         id: shell_id,
+        connection_id: connection_id.to_string(),
         server_id: server_id.to_string(),
         cmd_tx,
     };
@@ -1521,7 +1607,11 @@ async fn delete_snippet(app: AppHandle, id: String) -> Result<Vec<Snippet>, Stri
 }
 
 #[tauri::command]
-async fn connect(app: AppHandle, server: ServerConnection) -> Result<String, String> {
+async fn connect(
+    app: AppHandle,
+    server: ServerConnection,
+    connection_id: String,
+) -> Result<String, String> {
     let session = connect_ssh(
         &app,
         &server.host,
@@ -1529,6 +1619,7 @@ async fn connect(app: AppHandle, server: ServerConnection) -> Result<String, Str
         &server.user,
         &server.auth,
         server.timeout_seconds,
+        Some(&connection_id),
         Some(&server.id),
     )
     .await?;
@@ -1553,16 +1644,30 @@ async fn connect(app: AppHandle, server: ServerConnection) -> Result<String, Str
 
     {
         let mut sessions = state.sessions.lock().await;
-        sessions.insert(server.id.clone(), session);
+        sessions.insert(
+            connection_id.clone(),
+            ManagedSession {
+                connection_id: connection_id.clone(),
+                server_id: server.id.clone(),
+                handle: session,
+            },
+        );
     }
 
     let mut sessions = state.sessions.lock().await;
     let session = sessions
-        .get_mut(&server.id)
+        .get_mut(&connection_id)
         .ok_or_else(|| "Session not found".to_string())?;
 
     let config = PtyConfig::default();
-    let shell = open_pty_shell(&app, session, &config, &server.id).await?;
+    let shell = open_pty_shell(
+        &app,
+        &mut session.handle,
+        &config,
+        &connection_id,
+        &server.id,
+    )
+    .await?;
 
     let shell_id = shell.id.clone();
 
@@ -1575,19 +1680,29 @@ async fn connect(app: AppHandle, server: ServerConnection) -> Result<String, Str
 }
 
 #[tauri::command]
-async fn disconnect(app: AppHandle, server_id: String) -> Result<(), String> {
+async fn disconnect(app: AppHandle, connection_id: String) -> Result<(), String> {
     let state = app.state::<AppState>();
 
-    let session = {
+    let managed_session = {
         let mut sessions = state.sessions.lock().await;
-        sessions.remove(&server_id)
+        sessions.remove(&connection_id)
+    };
+
+    let server_id = if let Some(session) = managed_session.as_ref() {
+        Some(session.server_id.clone())
+    } else {
+        let shells = state.shells.lock().await;
+        shells
+            .values()
+            .find(|shell| shell.connection_id == connection_id)
+            .map(|shell| shell.server_id.clone())
     };
 
     let shell_ids: Vec<String> = {
         let shells = state.shells.lock().await;
         shells
             .iter()
-            .filter(|(_, shell)| shell.server_id == server_id)
+            .filter(|(_, shell)| shell.connection_id == connection_id)
             .map(|(id, _)| id.clone())
             .collect()
     };
@@ -1603,7 +1718,8 @@ async fn disconnect(app: AppHandle, server_id: String) -> Result<(), String> {
         }
     }
 
-    disconnect_ssh(&app, session, Some(&server_id)).await
+    let session = managed_session.map(|session| session.handle);
+    disconnect_ssh(&app, session, Some(&connection_id), server_id.as_deref()).await
 }
 
 #[tauri::command]
