@@ -939,12 +939,13 @@
 
       /* Ensure server action buttons show on card hover */
       .server-actions {
-        opacity: 0 !important;
+        opacity: 0.4 !important;
         transition: opacity 0.15s ease-in-out;
         position: relative;
       }
 
-      .server-item:hover .server-actions {
+      .server-item:hover .server-actions,
+      .snippet-item:hover .server-actions {
         opacity: 1 !important;
       }
 
@@ -1262,10 +1263,14 @@
         <div id="view-snippets" class="flex-1 flex flex-col min-h-0 hidden">
           <div class="sidebar-section-header flex justify-between items-center border-b border-gray-200/60 dark:border-gray-700/50">
             <span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Snippets</span>
-            <button id="add-snippet-btn" class="ghost-btn ghost-btn-success">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-              Add
-            </button>
+            <div class="flex gap-1">
+              <button id="export-data-btn" class="ghost-btn text-xs px-2 py-1">Export</button>
+              <button id="import-data-btn" class="ghost-btn text-xs px-2 py-1">Import</button>
+              <button id="add-snippet-btn" class="ghost-btn ghost-btn-success">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                Add
+              </button>
+            </div>
           </div>
           <div class="sidebar-list flex-1 overflow-y-auto space-y-2" id="snippet-list">
             <!-- Snippet items will be injected here -->

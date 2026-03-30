@@ -83,7 +83,7 @@ fn get_action_history_path(app_dir: &Path) -> PathBuf {
     app_dir.join(ACTION_HISTORY_FILE)
 }
 
-fn load_actions(app_dir: &Path) -> Result<Vec<Action>, String> {
+pub fn load_actions(app_dir: &Path) -> Result<Vec<Action>, String> {
     let path = get_actions_path(app_dir);
     if !path.exists() {
         return Ok(Vec::new());
@@ -94,7 +94,7 @@ fn load_actions(app_dir: &Path) -> Result<Vec<Action>, String> {
     parse_json_array_lenient(&data, "actions")
 }
 
-fn save_actions(app_dir: &Path, actions: &[Action]) -> Result<(), String> {
+pub fn save_actions(app_dir: &Path, actions: &[Action]) -> Result<(), String> {
     let path = get_actions_path(app_dir);
     let parent = path
         .parent()
@@ -216,7 +216,6 @@ async fn collect_command_output(
             }
             ChannelMsg::ExitStatus { exit_status } => {
                 exit_code = Some(exit_status);
-                break;
             }
             ChannelMsg::ExitSignal {
                 signal_name,

@@ -538,15 +538,26 @@ function renderSnippetList() {
         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
         Run
       </button>
-      <div class="snippet-tooltip hidden absolute left-0 right-0 top-full mt-1 z-50 bg-gray-900 dark:bg-gray-700 text-white text-xs font-mono p-3 rounded-lg shadow-lg whitespace-pre-wrap break-all max-h-48 overflow-y-auto">${snippet.command}</div>
+      <div class="snippet-tooltip hidden absolute left-0 right-0 bottom-full mb-1 z-50 bg-gray-900 dark:bg-gray-700 text-white text-xs font-mono p-3 rounded-lg shadow-lg whitespace-pre-wrap break-all max-h-48 overflow-y-auto">${snippet.command}</div>
     `;
     
     const tooltip = div.querySelector('.snippet-tooltip');
-    div.addEventListener('mouseenter', () => {
-      tooltip.classList.remove('hidden');
-    });
+    const textContent = div.querySelector('.min-w-0');
+    const actionBtns = div.querySelector('.server-actions');
+    const runBtn = div.querySelector('.snippet-run-btn');
+    
     div.addEventListener('mouseleave', () => {
       tooltip.classList.add('hidden');
+    });
+    
+    textContent?.addEventListener('mouseenter', () => {
+      tooltip.classList.remove('hidden');
+    });
+    
+    [actionBtns, runBtn].forEach(btn => {
+      btn?.addEventListener('mouseenter', () => {
+        tooltip.classList.add('hidden');
+      });
     });
     
     listEl.appendChild(div);
@@ -734,6 +745,61 @@ async function deleteSnippet(id) {
     id,
     label: snippet?.name || "this snippet",
   });
+}
+
+async function exportData() {
+  try {
+    const data = await invoke("export_data");
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ssh-thing-export-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    const exportStats = JSON.parse(data);
+    showAlert(
+      "Export Complete",
+      `Exported:\n- ${exportStats.snippets.length} snippets\n- ${exportStats.actions.length} actions\n\nFile saved to your browser's downloads folder.`
+    );
+  } catch (error) {
+    console.error("Failed to export:", error);
+    showAlert("Export Failed", `Failed to export data: ${error}`);
+  }
+}
+
+async function importData() {
+  try {
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = ".json";
+    fileInput.onchange = async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) {
+        showAlert("Import Cancelled", "No file selected");
+        return;
+      }
+      try {
+        const text = await file.text();
+        const result = await invoke("import_data", { data: text });
+        showAlert(
+          "Import Complete",
+          `Snippets: ${result.snippets_imported} imported, ${result.snippets_skipped} skipped\nActions: ${result.actions_imported} imported, ${result.actions_skipped} skipped`
+        );
+        await loadSnippets();
+        actionManager?.loadActions();
+      } catch (err) {
+        console.error("Failed to import:", err);
+        showAlert("Import Failed", `Failed to import data: ${err}`);
+      }
+    };
+    fileInput.click();
+  } catch (error) {
+    console.error("Failed to open file picker:", error);
+    showAlert("Import Failed", `Failed to open file picker: ${error}`);
+  }
 }
 
 function initTabs() {
@@ -940,6 +1006,8 @@ window.addEventListener("DOMContentLoaded", () => {
       });
     }
     document.getElementById("add-snippet-btn")?.addEventListener("click", openSnippetModal);
+    document.getElementById("export-data-btn")?.addEventListener("click", exportData);
+    document.getElementById("import-data-btn")?.addEventListener("click", importData);
     document.getElementById("snippet-cancel-btn")?.addEventListener("click", closeSnippetModal);
     document.getElementById("snippet-form")?.addEventListener("submit", saveSnippet);
     document.getElementById("snippet-list")?.addEventListener("click", (e) => {
@@ -1015,6 +1083,10 @@ window.addEventListener("DOMContentLoaded", () => {
         if (activeSession && activeSession.server) {
           disconnectFromServer(null, { requireConfirm: true });
         }
+      }
+      else if (e.shiftKey && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        toggleFocusMode();
       }
     }
     if (e.key === "Escape") {

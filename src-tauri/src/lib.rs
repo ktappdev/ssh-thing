@@ -422,6 +422,22 @@ pub struct Snippet {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportData {
+    pub version: String,
+    pub exported_at: u64,
+    pub snippets: Vec<Snippet>,
+    pub actions: Vec<crate::actions::Action>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportResult {
+    pub snippets_imported: usize,
+    pub snippets_skipped: usize,
+    pub actions_imported: usize,
+    pub actions_skipped: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TerminalOutput {
     pub connection_id: Option<String>,
     pub server_id: Option<String>,
@@ -1071,12 +1087,12 @@ pub async fn connect_ssh(
                 .authenticate_password(user, password)
                 .await
                 .map_err(|e| {
-                let _ = emit_connection_state(
-                    app,
-                    connection_id,
-                    server_id,
-                    None,
-                    ConnectionState::Error(format!("Authentication failed: {}", e)),
+                    let _ = emit_connection_state(
+                        app,
+                        connection_id,
+                        server_id,
+                        None,
+                        ConnectionState::Error(format!("Authentication failed: {}", e)),
                     );
                     format!("Authentication failed: {}", e)
                 })?;
@@ -1114,12 +1130,12 @@ pub async fn connect_ssh(
                 .authenticate_publickey(user, Arc::new(key_pair))
                 .await
                 .map_err(|e| {
-                let _ = emit_connection_state(
-                    app,
-                    connection_id,
-                    server_id,
-                    None,
-                    ConnectionState::Error(format!("Key authentication failed: {}", e)),
+                    let _ = emit_connection_state(
+                        app,
+                        connection_id,
+                        server_id,
+                        None,
+                        ConnectionState::Error(format!("Key authentication failed: {}", e)),
                     );
                     format!("Key authentication failed: {}", e)
                 })?;
@@ -1607,6 +1623,66 @@ async fn delete_snippet(app: AppHandle, id: String) -> Result<Vec<Snippet>, Stri
 }
 
 #[tauri::command]
+async fn export_data(app: AppHandle) -> Result<String, String> {
+    let app_dir = get_app_dir(&app)?;
+    let snippets = load_snippets(&app_dir)?;
+    let actions = crate::actions::load_actions(&app_dir)?;
+    let export = ExportData {
+        version: "1.0".to_string(),
+        exported_at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| format!("Failed to get timestamp: {}", e))?
+            .as_secs(),
+        snippets,
+        actions,
+    };
+    serde_json::to_string_pretty(&export).map_err(|e| format!("Failed to serialize export: {}", e))
+}
+
+#[tauri::command]
+async fn import_data(app: AppHandle, data: String) -> Result<ImportResult, String> {
+    let export: ExportData =
+        serde_json::from_str(&data).map_err(|e| format!("Failed to parse import data: {}", e))?;
+    let app_dir = get_app_dir(&app)?;
+    let existing_snippets = load_snippets(&app_dir)?;
+    let existing_actions = crate::actions::load_actions(&app_dir)?;
+    let existing_snippet_ids: std::collections::HashSet<_> =
+        existing_snippets.iter().map(|s| s.id.clone()).collect();
+    let existing_action_ids: std::collections::HashSet<_> =
+        existing_actions.iter().map(|a| a.id.clone()).collect();
+    let mut snippets_imported = 0;
+    let mut snippets_skipped = 0;
+    let mut new_snippets = existing_snippets;
+    for snippet in export.snippets {
+        if existing_snippet_ids.contains(&snippet.id) {
+            snippets_skipped += 1;
+        } else {
+            new_snippets.push(snippet);
+            snippets_imported += 1;
+        }
+    }
+    let mut actions_imported = 0;
+    let mut actions_skipped = 0;
+    let mut new_actions = existing_actions;
+    for action in export.actions {
+        if existing_action_ids.contains(&action.id) {
+            actions_skipped += 1;
+        } else {
+            new_actions.push(action);
+            actions_imported += 1;
+        }
+    }
+    save_snippets(&app_dir, &new_snippets)?;
+    crate::actions::save_actions(&app_dir, &new_actions)?;
+    Ok(ImportResult {
+        snippets_imported,
+        snippets_skipped,
+        actions_imported,
+        actions_skipped,
+    })
+}
+
+#[tauri::command]
 async fn connect(
     app: AppHandle,
     server: ServerConnection,
@@ -1766,6 +1842,8 @@ async fn resize(app: AppHandle, shell_id: String, width: u32, height: u32) -> Re
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .manage(AppState {
             sessions: Mutex::new(HashMap::new()),
             shells: Mutex::new(HashMap::new()),
@@ -1782,6 +1860,8 @@ pub fn run() {
             add_snippet,
             update_snippet,
             delete_snippet,
+            export_data,
+            import_data,
             get_actions,
             add_action,
             update_action,
