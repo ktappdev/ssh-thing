@@ -1118,6 +1118,10 @@ window.addEventListener("DOMContentLoaded", () => {
       sessionManager?.handleTerminalOutput(event.payload);
     });
 
+    listen("toggle-focus-mode", () => {
+      toggleFocusMode();
+    });
+
     document.getElementById("host-key-trust")?.addEventListener("click", async () => {
     if (!pendingHostKey) return;
     try {

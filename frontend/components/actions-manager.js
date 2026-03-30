@@ -142,7 +142,7 @@ export function initActionManager({ invoke, listen, getServers, showToast, showA
       const status = runningState?.status || action.last_execution_status || "idle";
       const buttonLabel = runningState ? "Running" : "Run";
       const item = document.createElement("div");
-      item.className = `action-item bg-white dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700/80 rounded-lg px-3 py-3 shadow-sm group relative ${runningState ? "status-running" : ""}`;
+      item.className = `action-item bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700/50 rounded-lg px-3 py-3 shadow-sm group relative ${runningState ? "status-running" : ""}`;
       item.dataset.id = action.id;
       item.innerHTML = `
         <div class="flex items-start gap-3">

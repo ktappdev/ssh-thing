@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::time::{timeout, Duration};
 use tracing::{debug, info};
@@ -1844,6 +1845,21 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .setup(|app| {
+            let shortcut = Shortcut::new(Some(Modifiers::META | Modifiers::SHIFT), Code::KeyF);
+            let app_handle = app.handle().clone();
+            app.handle().plugin(
+                tauri_plugin_global_shortcut::Builder::new()
+                    .with_handler(move |_app, _shortcut, event| {
+                        if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                            let _ = app_handle.emit("toggle-focus-mode", ());
+                        }
+                    })
+                    .build(),
+            )?;
+            app.global_shortcut().register(shortcut)?;
+            Ok(())
+        })
         .manage(AppState {
             sessions: Mutex::new(HashMap::new()),
             shells: Mutex::new(HashMap::new()),
