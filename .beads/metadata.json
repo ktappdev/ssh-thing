@@ -1,7 +1,4 @@
 {
-  "database": "dolt",
-  "backend": "dolt",
-  "dolt_mode": "server",
-  "dolt_database": "ssh_thing",
-  "project_id": "511ba7c6-338c-4fb5-941c-4503b5007b41"
+  "database": "beads.db",
+  "jsonl_export": "issues.jsonl"
 }
