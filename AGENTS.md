@@ -53,7 +53,7 @@ cargo fmt                      # Format code
 - Use `cargo fmt` to format code automatically
 - No custom rustfmt.toml exists; use defaults (4 spaces, rustfmt max width 100)
 - Use rustfmt's default brace style and indentation
-- Do NOT add comments unless explicitly required
+- Prefer self-documenting code. Add comments for non-obvious logic, security considerations, or complex algorithms.
 
 **Naming:**
 - `snake_case` for functions, variables, and module names
@@ -131,41 +131,59 @@ struct AppState {
 
 ## Key Files
 
+### Rust Backend
 - `src-tauri/src/lib.rs` - Main application logic, commands, SSH handling
 - `src-tauri/src/main.rs` - Entry point
 - `src-tauri/build.rs` - Build script
+- `src-tauri/src/actions.rs` - Actions CRUD + execution (563 lines)
+- `src-tauri/src/osc52.rs` - OSC52 escape sequence parser + clipboard (309 lines)
+- `src-tauri/capabilities/default.json` - Tauri 2.x permissions
 - `src-tauri/tauri.conf.json` - Tauri configuration
+
+### Frontend
 - `frontend/index.html` - Main HTML
 - `frontend/main.js` - Frontend JavaScript
+- `frontend/components/session-manager.js` - Terminal sessions, xterm.js, tabs (830 lines)
+- `frontend/components/actions-manager.js` - Actions UI CRUD + execution (493 lines)
+- `frontend/components/server-list.js` - Server card rendering (196 lines)
+- `frontend/components/about-modal.js` - About modal component (62 lines)
+- `frontend/components/header-menu.js` - Header dropdown menu (40 lines)
 
 ## Dependencies
 
-- russh: SSH client implementation
-- tokio: Async runtime
-- serde/serde_json: JSON serialization
-- toml: TOML configuration files
-- uuid: Generate unique IDs
-- tauri: Desktop app framework
+### Rust Crates
+- **russh**: SSH client implementation
+- **tokio**: Async runtime
+- **serde/serde_json**: JSON serialization
+- **toml**: TOML configuration files
+- **uuid**: Generate unique IDs
+- **tauri**: Desktop app framework
+- **keyring**: System keychain credential storage
+
+### Frontend
+- **xterm.js**: Terminal emulator
+- **xterm-addon-fit**: Terminal auto-resize
+- **xterm-addon-search**: Terminal search
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
 
-This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
+This project uses **br (beads)** for issue tracking. Run `br prime` to see full workflow context and commands.
 
 ### Quick Reference
 
 ```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work
-bd close <id>         # Complete work
+br ready              # Find available work
+br show <id>          # View issue details
+br update <id> --claim  # Claim work
+br close <id>         # Complete work
 ```
 
 ### Rules
 
-- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
-- Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
+- Use `br` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
+- Run `br prime` for detailed command reference and session close protocol
+- Use `br remember` for persistent knowledge — do NOT use MEMORY.md files
 
 ## Session Completion
 
@@ -179,7 +197,7 @@ bd close <id>         # Complete work
 4. **PUSH TO REMOTE** - This is MANDATORY:
    ```bash
    git pull --rebase
-   bd dolt push
+   br dolt push
    git push
    git status  # MUST show "up to date with origin"
    ```
