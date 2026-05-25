@@ -779,6 +779,31 @@ export function createSessionManager(options) {
         syncPtySize(active);
       }
     });
+
+    // ResizeObserver for CSS-driven container changes (focus mode toggle, etc.)
+    // More reliable than window.resize — catches CSS transitions, padding changes, display changes.
+    let resizeRafId = null;
+    const containerObserver = new ResizeObserver(() => {
+      if (resizeRafId) return;
+      resizeRafId = requestAnimationFrame(() => {
+        resizeRafId = null;
+        sessions.forEach((session) => {
+          if (session?.fitAddon) {
+            session.fitAddon.fit();
+            syncPtySize(session);
+          }
+        });
+        // Re-anchor viewport after resize — prevents autoScrollEnabled getting stuck false
+        const active = getActiveSession();
+        if (active?.term) {
+          active.term.scrollToBottom();
+        }
+      });
+    });
+    // Delay connection to avoid spurious resize during initial page load
+    setTimeout(() => {
+      if (terminalEl) containerObserver.observe(terminalEl);
+    }, 100);
   }
 
   function handleConnectionEvent(payload) {

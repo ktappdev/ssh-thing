@@ -835,6 +835,7 @@ function toggleFocusMode() {
         if (active?.id) {
           sessionManager?.setActiveSession(active.id);
         }
+        active?.term?.scrollToBottom?.();
         active?.term?.focus?.();
     }, 300);
 }
