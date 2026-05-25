@@ -264,6 +264,11 @@ async fn run_action_command(
             .map_err(|e| format!("Failed to open session channel: {}", e))?;
 
         channel
+            .request_pty(false, "xterm-256color", 80, 24, 0, 0, &[])
+            .await
+            .map_err(|e| format!("Failed to request PTY: {}", e))?;
+
+        channel
             .exec(true, action.command.clone())
             .await
             .map_err(|e| format!("Failed to start command: {}", e))?;
@@ -405,18 +410,16 @@ pub async fn execute_action(
     match run_action_command(&app, &action, &server).await {
         Ok(outcome) => {
             let completed_at = unix_timestamp_now()?;
-            let status = if outcome.exit_code.unwrap_or(0) == 0 {
-                "success"
-            } else {
-                "error"
-            };
-            let error = if status == "error" {
-                Some(match outcome.exit_code {
-                    Some(code) => format!("Command exited with status {}", code),
-                    None => "Command failed without an exit status".to_string(),
-                })
-            } else {
-                None
+            let (status, error) = match outcome.exit_code {
+                Some(0) => ("success", None),
+                Some(code) => ("error", Some(format!("Command exited with status {}", code))),
+                None => {
+                    if outcome.output.is_empty() {
+                        ("error", Some("Command produced no output and returned no exit status — the command may have failed to start or the SSH server closed the channel abnormally.".to_string()))
+                    } else {
+                        ("error", Some("Command completed without an exit status".to_string()))
+                    }
+                }
             };
             let entry = ActionHistoryEntry {
                 id: uuid::Uuid::new_v4().to_string(),
