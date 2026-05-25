@@ -787,16 +787,11 @@ export function createSessionManager(options) {
       if (resizeRafId) return;
       resizeRafId = requestAnimationFrame(() => {
         resizeRafId = null;
-        sessions.forEach((session) => {
-          if (session?.fitAddon) {
-            session.fitAddon.fit();
-            syncPtySize(session);
-          }
-        });
-        // Re-anchor viewport after resize — prevents autoScrollEnabled getting stuck false
         const active = getActiveSession();
-        if (active?.term) {
-          active.term.scrollToBottom();
+        if (active?.fitAddon) {
+          active.fitAddon.fit();
+          syncPtySize(active);
+          active.term?.scrollToBottom();
         }
       });
     });
