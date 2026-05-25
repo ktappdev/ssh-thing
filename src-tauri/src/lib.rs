@@ -37,11 +37,6 @@ pub enum ConnectionState {
 }
 
 #[tauri::command]
-async fn greet(name: String) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
-#[tauri::command]
 async fn get_servers(app: AppHandle) -> Result<Vec<ServerConnection>, String> {
     let app_dir = get_app_dir(&app)?;
     load_servers(&app_dir, &app)
@@ -1866,7 +1861,6 @@ pub fn run() {
             pending_host_keys: Mutex::new(HashMap::new()),
         })
         .invoke_handler(tauri::generate_handler![
-            greet,
             get_servers,
             add_server,
             update_server,
