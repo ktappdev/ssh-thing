@@ -231,7 +231,8 @@ async fn collect_command_output(
                 return Err("Remote command request failed".to_string());
             }
             ChannelMsg::Close | ChannelMsg::Eof => {
-                break;
+                // Keep reading — ExitStatus may arrive after close/eof.
+                // The loop breaks when channel.wait() returns None.
             }
             _ => {}
         }
@@ -263,10 +264,14 @@ async fn run_action_command(
             .await
             .map_err(|e| format!("Failed to open session channel: {}", e))?;
 
-        channel
+        // Try to allocate a PTY for proper TTY environment; fall back to plain exec if unsupported
+        if channel
             .request_pty(false, "xterm-256color", 80, 24, 0, 0, &[])
             .await
-            .map_err(|e| format!("Failed to request PTY: {}", e))?;
+            .is_err()
+        {
+            debug!("PTY allocation failed for action, falling back to plain exec");
+        }
 
         channel
             .exec(true, action.command.clone())

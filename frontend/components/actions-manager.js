@@ -374,6 +374,8 @@ export function initActionManager({ invoke, listen, getServers, showToast, showA
 
     try {
       const entries = await invoke("get_action_history", { actionId });
+      // Guard against stale responses when multiple actions finish close together
+      if (state.historyActionId !== actionId) return;
       renderHistory(entries);
       if (!preserveOpen) {
         document.getElementById("action-history-modal")?.classList.remove("hidden");
@@ -442,12 +444,22 @@ export function initActionManager({ invoke, listen, getServers, showToast, showA
 
     if (payload.status === "success") {
       showToast(payload.message || `${payload.action_name} completed`, "success");
+      if (payload.entry?.output) {
+        const actionsView = document.getElementById("view-actions");
+        if (actionsView && !actionsView.classList.contains("hidden")) {
+          loadHistory(payload.action_id);
+        }
+      }
       return;
     }
 
     if (payload.status === "error") {
       const detail = payload.entry?.error || payload.message || `${payload.action_name} failed`;
       showAlert("Action Failed", detail);
+      const actionsView = document.getElementById("view-actions");
+      if (actionsView && !actionsView.classList.contains("hidden")) {
+        loadHistory(payload.action_id);
+      }
     }
   });
 
