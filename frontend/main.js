@@ -873,6 +873,28 @@ async function setupWindowCloseGuard() {
   });
 }
 
+async function updateWindowState() {
+  const win = tauriWindow?.getCurrentWindow?.();
+  if (!win) return;
+  try {
+    const [maximized, fullscreen] = await Promise.all([
+      win.isMaximized(),
+      win.isFullscreen(),
+    ]);
+    document.body.classList.toggle('window-maximized', maximized);
+    document.body.classList.toggle('window-fullscreen', fullscreen);
+  } catch (e) {
+    console.error('Window state check failed:', e);
+  }
+}
+
+function initWindowState() {
+  updateWindowState();
+  setInterval(updateWindowState, 500);
+  const win = tauriWindow?.getCurrentWindow?.();
+  win?.onResized?.(() => updateWindowState());
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   try {
     initTheme();
@@ -901,6 +923,7 @@ window.addEventListener("DOMContentLoaded", () => {
     initAboutModal().catch((error) => console.error("About modal init failed:", error));
     disableInputCorrections();
     setupWindowCloseGuard();
+    initWindowState();
     if (!SearchAddonCtor) {
       document.getElementById("terminal-search-btn")?.classList.add("hidden");
     }
