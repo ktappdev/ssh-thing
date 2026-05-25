@@ -417,12 +417,18 @@ pub async fn execute_action(
             let completed_at = unix_timestamp_now()?;
             let (status, error) = match outcome.exit_code {
                 Some(0) => ("success", None),
-                Some(code) => ("error", Some(format!("Command exited with status {}", code))),
+                Some(code) => (
+                    "error",
+                    Some(format!("Command exited with status {}", code)),
+                ),
                 None => {
                     if outcome.output.is_empty() {
                         ("error", Some("Command produced no output and returned no exit status — the command may have failed to start or the SSH server closed the channel abnormally.".to_string()))
                     } else {
-                        ("error", Some("Command completed without an exit status".to_string()))
+                        (
+                            "error",
+                            Some("Command completed without an exit status".to_string()),
+                        )
                     }
                 }
             };
