@@ -1,6 +1,6 @@
 # SSH Thing
 
-SSH Thing is a cross-platform desktop SSH client built with Tauri (Rust backend) and a vanilla HTML/JS frontend. It's designed for users who want a lightweight, focused tool that prioritizes the features they actually use — without the unnecessary bloat of larger SSH clients.
+SSH Thing is a cross-platform desktop SSH client built with **[Tauri 2.x](https://v2.tauri.app)** (Rust backend) and a vanilla HTML/JS frontend. It's designed for users who want a lightweight, focused tool that prioritizes the features they actually use — without the unnecessary bloat of larger SSH clients.
 
 ![SSH Thing screenshot](./screen1.jpg)
 
@@ -20,7 +20,8 @@ SSH Thing isn't trying to be the most feature-rich SSH client. It's trying to be
 - **Server Management**: Save and organize your frequently used servers with nicknames, usernames, and port numbers
 - **One-Click Connections**: Connect and disconnect with a single click
 - **Clear Status Indicators**: Easy-to-read connection status and terminal feedback
-- **Terminal Experience**: Keyboard-friendly terminal with support for search, scrollback, and terminal settings
+- **Terminal Experience**: Keyboard-friendly terminal with support for search, scrollback, terminal settings, and **OSC52 copy support** (copy terminal output directly to clipboard)
+- **Actions**: Define and execute command macros on connected servers, with execution status tracking and import/export support
 - **Basic Credential Storage**: Securely store credentials using the system's native keychain
 
 ### Quality of Life Features
@@ -34,7 +35,7 @@ SSH Thing isn't trying to be the most feature-rich SSH client. It's trying to be
 
 ### Pre-built Binaries
 
-Download the latest release from the [Releases page](https://github.com/yourusername/ssh-thing/releases).
+Download the latest release from the [Releases page](https://github.com/ktappdev/ssh-thing/releases).
 
 ### Code Signing Workaround
 
@@ -61,12 +62,12 @@ If you'd like to build SSH Thing from source, follow these steps:
 
 ### Prerequisites
 - **Rust**: Install Rust from [rust-lang.org](https://www.rust-lang.org/)
-- **Tauri**: Follow the [Tauri setup guide](https://tauri.app/v1/guides/getting-started/prerequisites/)
+- **Tauri**: Follow the [Tauri 2.x setup guide](https://v2.tauri.app/start/prerequisites/)
 
 ### Build Instructions
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/ssh-thing.git
+   git clone https://github.com/ktappdev/ssh-thing.git
    cd ssh-thing
    ```
 2. Install dependencies:
@@ -77,9 +78,14 @@ If you'd like to build SSH Thing from source, follow these steps:
    ```bash
    npm run tauri dev
    ```
+   (Or alternatively: `cargo tauri dev`)
 4. Build the app for production:
    ```bash
    npm run tauri build
+   ```
+   For macOS universal builds (Intel + Apple Silicon), run:
+   ```bash
+   ./build-release.sh
    ```
 
 ## Usage
