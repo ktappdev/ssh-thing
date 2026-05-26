@@ -921,6 +921,7 @@ struct PendingHostKey {
     public_key_base64: String,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn connect_ssh(
     app: &AppHandle,
     host: &str,
