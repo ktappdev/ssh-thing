@@ -9,7 +9,6 @@
     "core:window:allow-destroy",
     "core:window:allow-is-maximized",
     "core:window:allow-is-fullscreen",
-    "core:window:allow-listen-resized",
     "opener:default",
     "dialog:default",
     "fs:default",
