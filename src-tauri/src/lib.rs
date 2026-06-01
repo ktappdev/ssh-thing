@@ -18,7 +18,10 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::time::{timeout, Duration};
-use tracing::{debug, info};
+use tracing::debug;
+
+#[cfg(debug_assertions)]
+use tracing::info;
 
 pub use actions::{
     add_action, delete_action, execute_action, get_action_history, get_actions, update_action,
@@ -1343,13 +1346,13 @@ pub async fn open_pty_shell(
                             }
                         }
                         Some(ShellCommand::Resize(width, height)) => {
-                            if let Err(e) = channel_for_task.window_change(width, height, 0, 0).await {
+                            if let Err(_e) = channel_for_task.window_change(width, height, 0, 0).await {
                                 #[cfg(debug_assertions)]
                                 debug!(
                                     shell_id = %shell_id_for_task,
                                     width,
                                     height,
-                                    error = %e,
+                                    error = %_e,
                                     "Failed to resize shell"
                                 );
                             }
