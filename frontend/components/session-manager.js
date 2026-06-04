@@ -1,6 +1,6 @@
 const SearchAddonCtor =
-  typeof window.SearchAddon !== "undefined" && typeof window.SearchAddon.SearchAddon === "function"
-    ? window.SearchAddon.SearchAddon
+  typeof window.SearchAddon === "function"
+    ? window.SearchAddon
     : null;
 
 const MAX_CONNECTIONS = 5;
@@ -395,7 +395,7 @@ export function createSessionManager(options) {
       const term = createFallbackTerminal(pane, "Terminal engine failed to load. Connection list still works.");
       return { term, fitAddon: { fit: () => {} }, searchAddon: null, container: pane };
     }
-    if (!window.FitAddon || typeof window.FitAddon.FitAddon !== "function") {
+    if (typeof window.FitAddon !== "function") {
       const term = createFallbackTerminal(pane, "Terminal resize addon failed to load. Connection list still works.");
       return { term, fitAddon: { fit: () => {} }, searchAddon: null, container: pane };
     }
@@ -412,7 +412,7 @@ export function createSessionManager(options) {
       convertEol: true,
     });
 
-    const paneFitAddon = new FitAddon.FitAddon();
+    const paneFitAddon = new window.FitAddon();
     const searchAddon = SearchAddonCtor ? new SearchAddonCtor() : null;
     termInstance.loadAddon(paneFitAddon);
     if (searchAddon) {
