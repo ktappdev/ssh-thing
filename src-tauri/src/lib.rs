@@ -1687,6 +1687,8 @@ async fn connect(
     app: AppHandle,
     server: ServerConnection,
     connection_id: String,
+    width: Option<u32>,
+    height: Option<u32>,
 ) -> Result<String, String> {
     let session = connect_ssh(
         &app,
@@ -1735,7 +1737,11 @@ async fn connect(
         .get_mut(&connection_id)
         .ok_or_else(|| "Session not found".to_string())?;
 
-    let config = PtyConfig::default();
+    let config = PtyConfig {
+        term: "xterm-256color".to_string(),
+        width: width.unwrap_or(80),
+        height: height.unwrap_or(24),
+    };
     let shell = open_pty_shell(
         &app,
         &mut session.handle,

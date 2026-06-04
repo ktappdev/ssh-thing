@@ -409,6 +409,7 @@ export function createSessionManager(options) {
       scrollback: settings.scrollback,
       fastScrollModifier: "alt",
       rightClickSelectsWord: true,
+      convertEol: true,
     });
 
     const paneFitAddon = new FitAddon.FitAddon();
@@ -556,6 +557,29 @@ export function createSessionManager(options) {
 
   function writeToSessionTerminal(session, output) {
     if (!session?.term) return;
+
+    // If output ends with \r, write immediately without buffering
+    // This prevents status line duplication from rapid in-place updates
+    if (output.endsWith("\r")) {
+      // Flush any existing buffer first
+      if (session.outputBuffer) {
+        session.term.write(session.outputBuffer);
+        if (session.autoScrollEnabled) {
+          session.term.scrollToBottom();
+        }
+        session.outputBuffer = "";
+      }
+      if (session.outputTimeout) {
+        clearTimeout(session.outputTimeout);
+        session.outputTimeout = null;
+      }
+      session.term.write(output);
+      if (session.autoScrollEnabled) {
+        session.term.scrollToBottom();
+      }
+      return;
+    }
+
     session.outputBuffer = `${session.outputBuffer || ""}${output}`;
     if (session.outputTimeout) return;
 
@@ -681,6 +705,8 @@ export function createSessionManager(options) {
       const newShellId = await options.invoke("connect", {
         server: session.server,
         connectionId: session.id,
+        width: session.term.cols || 80,
+        height: session.term.rows || 24,
       });
       session.shellId = newShellId;
       syncPtySize(session);

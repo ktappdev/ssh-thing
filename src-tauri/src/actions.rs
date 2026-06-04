@@ -245,6 +245,8 @@ async fn run_action_command(
     app: &AppHandle,
     action: &Action,
     server: &ServerConnection,
+    width: Option<u32>,
+    height: Option<u32>,
 ) -> Result<ActionCommandOutcome, String> {
     let session = connect_ssh(
         app,
@@ -265,8 +267,10 @@ async fn run_action_command(
             .map_err(|e| format!("Failed to open session channel: {}", e))?;
 
         // Try to allocate a PTY for proper TTY environment; fall back to plain exec if unsupported
+        let pty_width = width.unwrap_or(80);
+        let pty_height = height.unwrap_or(24);
         if channel
-            .request_pty(false, "xterm-256color", 80, 24, 0, 0, &[])
+            .request_pty(false, "xterm-256color", pty_width, pty_height, 0, 0, &[])
             .await
             .is_err()
         {
@@ -412,7 +416,7 @@ pub async fn execute_action(
 
     debug!(action_id = %action.id, server_id = %server.id, "Executing action");
 
-    match run_action_command(&app, &action, &server).await {
+    match run_action_command(&app, &action, &server, None, None).await {
         Ok(outcome) => {
             let completed_at = unix_timestamp_now()?;
             let (status, error) = match outcome.exit_code {
