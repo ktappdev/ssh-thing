@@ -1,121 +1,177 @@
 # SSH Thing
 
-SSH Thing is a cross-platform desktop SSH client built with **[Tauri 2.x](https://v2.tauri.app)** (Rust backend) and a vanilla HTML/JS frontend. It's designed for users who want a lightweight, focused tool that prioritizes the features they actually use — without the unnecessary bloat of larger SSH clients.
+[![Version](https://img.shields.io/badge/version-1.1.21-blue.svg)](https://github.com/ktappdev/ssh-thing/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Tauri 2.x](https://img.shields.io/badge/Tauri-2.x-orange.svg)](https://v2.tauri.app)
+[![Rust](https://img.shields.io/badge/Rust-2021-yellow.svg)](https://www.rust-lang.org)
+
+A cross-platform desktop SSH client built with **Tauri 2.x** (Rust backend) and vanilla HTML/JS. Lightweight, fast, and focused on what matters — connecting to servers.
 
 ![SSH Thing screenshot](./screen1.jpg)
 
 ## Why SSH Thing?
 
-I built SSH Thing because I was tired of SSH clients that tried to do everything under the sun. I wanted a tool that was:
-- **Lightweight**: Small executable size with minimal system overhead
-- **Focused**: Just the features I use daily — no unnecessary bells and whistles
-- **Fast**: Quick to start and responsive to use
-- **Simple**: Clean interface that gets out of the way
+Most SSH clients try to do everything. SSH Thing does what you actually need:
 
-SSH Thing isn't trying to be the most feature-rich SSH client. It's trying to be the best one for people who want to connect to servers quickly and reliably.
+- **Lightweight** — Small binary, minimal system overhead
+- **Fast** — Instant startup, responsive terminal
+- **Focused** — No bloat, just essential features
+- **Secure** — Credentials stored in OS keychain, not plaintext
 
 ## Features
 
-### Core Functionality
-- **Server Management**: Save and organize your frequently used servers with nicknames, usernames, and port numbers
-- **One-Click Connections**: Connect and disconnect with a single click
-- **Clear Status Indicators**: Easy-to-read connection status and terminal feedback
-- **Terminal Experience**: Keyboard-friendly terminal with support for search, scrollback, terminal settings, and **OSC52 copy support** (copy terminal output directly to clipboard)
-- **Actions**: Define and execute command macros on connected servers, with execution status tracking and import/export support
-- **Basic Credential Storage**: Securely store credentials using the system's native keychain
+### SSH Core
+- **Server Management** — Save servers with nicknames, hosts, ports, and auth methods
+- **Password & Key Auth** — Support for both password and SSH key authentication
+- **Host Key Verification** — TOFU model with known hosts persistence
+- **One-Click Connect** — Connect/disconnect with a single click
+- **Concurrent Sessions** — Run multiple SSH connections simultaneously
 
-### Quality of Life Features
-- **Dark/Light Theme**: Toggle between dark and light modes
-- **Focus Mode**: Hide the sidebar and chrome to maximize terminal space
-- **Terminal Settings**: Customize font size and scrollback buffer
-- **Connection Log**: Keep track of your connection history
-- **Session Management**: Manage multiple concurrent SSH sessions
+### Terminal
+- **PTY Support** — Full pseudo-terminal with proper signal handling
+- **OSC52 Clipboard** — Copy terminal output directly to system clipboard
+- **Scrollback Buffer** — Configurable history size
+- **Terminal Resize** — Adjust terminal dimensions on the fly
+- **Search** — Find text in terminal output
 
-## Download and Installation
+### Productivity
+- **Snippets** — Save and reuse commands across sessions
+- **Actions** — Command macros with execution history and status tracking
+- **Import/Export** — Backup and restore your servers, snippets, and actions
+- **Connection Log** — Track your connection history
+
+### Interface
+- **Dark/Light Theme** — Toggle to match your preference
+- **Focus Mode** — Hide sidebar for maximum terminal space
+- **Global Shortcuts** — Quick access from anywhere in the app
+- **Status Indicators** — Clear connection state feedback
+
+## Download
 
 ### Pre-built Binaries
 
-Download the latest release from the [Releases page](https://github.com/ktappdev/ssh-thing/releases).
+Get the latest release from the [Releases page](https://github.com/ktappdev/ssh-thing/releases).
 
-### Code Signing Workaround
+### Platform-Specific Notes
 
-SSH Thing is not currently code signed (no Apple Developer ID or Windows Authenticode certificate), so your operating system may treat it as untrusted. Here's how to work around this:
-
-#### macOS (DMG Install)
-1. Mount the `.dmg` file and drag **SSH Thing** into your **Applications** folder
-2. If macOS says "SSH THING is damaged and can't be opened", open Terminal and run:
+#### macOS
+1. Mount the `.dmg` and drag **SSH Thing** to Applications
+2. If blocked by Gatekeeper, run:
    ```bash
    sudo xattr -cr "/Applications/SSH THING.app"
    ```
-3. Launch SSH Thing from **Applications**
-4. If you still see a warning, right-click the app and select **Open**
+3. Or right-click → Open
 
-#### Windows (SmartScreen)
-1. Download and run the `.msi` installer
-2. If Windows Defender SmartScreen blocks the install:
-   - Click **More info**
-   - Click **Run anyway** to continue the installation
+#### Windows
+1. Run the `.msi` installer
+2. If SmartScreen blocks, click **More info** → **Run anyway**
 
-## Building from Source
+#### Linux
+1. Install the `.deb` or `.AppImage` from releases
+2. For `.deb`:
+   ```bash
+   sudo dpkg -i ssh-thing_*.deb
+   ```
+3. For `.AppImage`:
+   ```bash
+   chmod +x ssh-thing_*.AppImage
+   ./ssh-thing_*.AppImage
+   ```
 
-If you'd like to build SSH Thing from source, follow these steps:
+## Build from Source
 
 ### Prerequisites
-- **Rust**: Install Rust from [rust-lang.org](https://www.rust-lang.org/)
-- **Tauri**: Follow the [Tauri 2.x setup guide](https://v2.tauri.app/start/prerequisites/)
 
-### Build Instructions
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/ktappdev/ssh-thing.git
-   cd ssh-thing
-   ```
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Run the app in development mode:
-   ```bash
-   npm run tauri dev
-   ```
-   (Or alternatively: `cargo tauri dev`)
-4. Build the app for production:
-   ```bash
-   npm run tauri build
-   ```
-   For macOS universal builds (Intel + Apple Silicon), run:
-   ```bash
-   ./build-release.sh
-   ```
+- [Rust](https://www.rust-lang.org/) (2021 edition)
+- [Node.js](https://nodejs.org/) (for npm)
+- [Tauri 2.x prerequisites](https://v2.tauri.app/start/prerequisites/)
+
+### Development
+
+```bash
+git clone https://github.com/ktappdev/ssh-thing.git
+cd ssh-thing
+npm install
+npm run tauri dev
+```
+
+### Production Build
+
+```bash
+npm run tauri build
+```
+
+For macOS universal builds (Intel + Apple Silicon):
+
+```bash
+./build-release.sh
+```
+
+## Tech Stack
+
+| Component | Technology |
+|-----------|------------|
+| Backend | Rust + Tauri 2.x |
+| SSH | [russh](https://github.com/warp-tech/russh) (pure Rust) |
+| Async | Tokio |
+| Keychain | [keyring](https://github.com/hwchen/keyring.rs) |
+| Frontend | Vanilla HTML/JS |
 
 ## Usage
 
-### Adding a Server
-1. Click the **Add** button in the Servers tab
-2. Enter the server details:
-   - **Nickname**: A friendly name for the server
-   - **Host**: The server's IP address or hostname
-   - **Port**: The SSH port (default: 22)
-   - **Username**: Your SSH username
-   - **Password/Private Key**: Choose your authentication method
+### Add a Server
+
+1. Click **+** in the Servers tab
+2. Fill in details:
+   - **Nickname** — Friendly name (e.g., "Production API")
+   - **Host** — IP or hostname
+   - **Port** — SSH port (default: 22)
+   - **Username** — SSH user
+   - **Auth** — Password or private key
 3. Click **Save**
 
-### Connecting to a Server
-1. Click on a server in the Servers list
-2. If prompted, enter your password or select your private key
-3. The terminal will connect and you'll see the remote shell prompt
+### Connect
 
-### Managing Snippets
-1. Click the **Snippets** tab
-2. Click **Add** to create a new snippet
-3. Enter a title and the command you want to save
-4. Click **Save**
-5. To use a snippet, click on it from the list — it will be pasted into the active terminal
+1. Click a server in the list
+2. Authenticate if prompted
+3. Start typing commands
+
+### Use Snippets
+
+1. Open the **Snippets** tab
+2. Add a command with title and description
+3. Click any snippet to paste it into the active terminal
+
+### Run Actions
+
+1. Open the **Actions** tab
+2. Create a macro (e.g., "Deploy" → `git pull && npm install && pm2 restart all`)
+3. Execute on any connected server
+4. View execution history and status
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl/Cmd + N` | New server |
+| `Ctrl/Cmd + K` | Quick connect |
+| `Ctrl/Cmd + L` | Clear terminal |
+| `Ctrl/Cmd + F` | Search terminal |
+| `Ctrl/Cmd + D` | Disconnect |
+| `F11` | Focus mode toggle |
+
+*Note: Shortcuts may vary by platform. Check the app menu for platform-specific shortcuts.*
 
 ## Contributing
 
-If you'd like to contribute to SSH Thing, please feel free to open an issue or submit a pull request. Feature requests are also welcome!
+Contributions welcome! Open an issue or submit a PR.
+
+1. Fork the repo
+2. Create your feature branch (`git checkout -b feature/amazing`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing`)
+5. Open a Pull Request
 
 ## License
 
-SSH Thing is open source software licensed under the [MIT License](LICENSE).
+[MIT](LICENSE) © Ken Taylor
