@@ -8,8 +8,8 @@ const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 const tauriWindow = window.__TAURI__.window || null;
 const SearchAddonCtor =
-  typeof window.SearchAddon === "function"
-    ? window.SearchAddon
+  typeof window.SearchAddon?.SearchAddon === "function"
+    ? window.SearchAddon.SearchAddon
     : null;
 
 const DEFAULT_TERMINAL_SETTINGS = {
