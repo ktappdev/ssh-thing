@@ -195,7 +195,7 @@ export function createSessionManager(options) {
         statusEl.className = "text-xs font-medium text-gray-600 bg-gray-200 dark:text-gray-400 dark:bg-gray-700 px-2.5 py-0.5 rounded-full";
       }
       if (statusIndicator) {
-        statusIndicator.className = "w-2 h-2 rounded-full bg-gray-400";
+        statusIndicator.className = "status-dot disconnected";
       }
       if (statusBarHost) {
         statusBarHost.textContent = "Not connected";
@@ -240,7 +240,7 @@ export function createSessionManager(options) {
           }
           statusEl.textContent = "Connecting...";
           statusEl.className = "text-xs font-medium text-white bg-yellow-500 px-2.5 py-0.5 rounded-full";
-          statusIndicator.className = "w-2 h-2 rounded-full bg-yellow-500 animate-pulse";
+          statusIndicator.className = "status-dot connecting";
           break;
         case "Connected":
           if (resetTerminal) {
@@ -293,20 +293,20 @@ export function createSessionManager(options) {
       const tab = document.createElement("button");
       const state = session.connectionState.type;
       const dotClass = state === "Connected"
-        ? "bg-green-400"
+        ? "status-dot connected"
         : state === "Connecting"
-          ? "bg-yellow-400 animate-pulse"
+          ? "status-dot connecting"
           : state === "Error"
-            ? "bg-red-400"
-            : "bg-gray-400";
+            ? "status-dot error"
+            : "status-dot disconnected";
 
-      tab.className = `flex items-center gap-2 px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+      tab.className = `flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
         isActive
           ? "bg-blue-500 text-white"
           : "text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
       }`;
       tab.innerHTML = `
-        <div class="w-1.5 h-1.5 rounded-full ${dotClass}"></div>
+        <div class="${dotClass}" style="width:0.375rem;height:0.375rem;box-shadow:none;"></div>
         <span class="truncate max-w-36">${getSessionTabLabel(session)}</span>
       `;
       tab.addEventListener("click", () => setActiveSession(session.id));

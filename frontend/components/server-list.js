@@ -22,13 +22,13 @@ function buildMeta(server, summary, formatLastConnected) {
 function statusDot(summary) {
   switch (summary.primaryState) {
     case "Connecting":
-      return '<div class="w-2 h-2 rounded-full bg-amber-500 animate-pulse flex-shrink-0"></div>';
+      return '<div class="status-dot connecting"></div>';
     case "Connected":
-      return '<div class="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"></div>';
+      return '<div class="status-dot connected"></div>';
     case "Error":
-      return '<div class="w-2 h-2 rounded-full bg-red-500 flex-shrink-0"></div>';
+      return '<div class="status-dot error"></div>';
     default:
-      return '<div class="w-2 h-2 rounded-full bg-gray-400 dark:bg-gray-500 flex-shrink-0"></div>';
+      return '<div class="status-dot disconnected"></div>';
   }
 }
 
@@ -48,7 +48,7 @@ function createServerCard({ server, summary, formatLastConnected, onPrimaryActio
     statusClass = "status-error";
   }
 
-  div.className = `server-item bg-white dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700/80 rounded-lg px-3 py-2.5 shadow-sm group flex items-center gap-3 cursor-pointer ${statusClass}`;
+  div.className = `server-item bg-white dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700/80 rounded-xl px-3.5 py-3 shadow-sm group flex items-center gap-3 cursor-pointer ${statusClass}`;
 
   const displayName = server.nickname && server.nickname.trim().length > 0 ? server.nickname : `${server.user}@${server.host}`;
   const subtitle = server.nickname && server.nickname.trim().length > 0

@@ -136,6 +136,14 @@ if [[ "$PUSH_CHANGES" == "true" ]]; then
   git push origin "$CURRENT_BRANCH"
   git push origin "$TAG"
   echo "Pushed branch and tag to origin."
+
+  # Optionally update Homebrew cask
+  if [[ -x "$ROOT_DIR/scripts/update-homebrew.sh" ]]; then
+    echo "Updating Homebrew cask..."
+    "$ROOT_DIR/scripts/update-homebrew.sh" "$VERSION" || echo "Warning: Homebrew update failed" >&2
+  else
+    echo "Homebrew update script not found or not executable. Skipping."
+  fi
 else
   echo "Nothing pushed yet."
   echo "Run:"
