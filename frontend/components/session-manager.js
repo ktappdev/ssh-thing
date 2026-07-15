@@ -343,7 +343,7 @@ export function createSessionManager(options) {
     sessions.forEach((session) => {
       setTerminalOption(session.term, "fontSize", settings.fontSize);
       setTerminalOption(session.term, "scrollback", settings.scrollback);
-      session.fitAddon?.fit();
+      safeFit(session);
       syncPtySize(session);
     });
   }
@@ -486,6 +486,8 @@ export function createSessionManager(options) {
       autoScrollEnabled: true,
       outputBuffer: "",
       outputTimeout: null,
+      writeInProgress: false,
+      fitPending: false,
       createdAt: now,
       lastActivatedAt: now,
       pendingExplicitDisconnect: false,
@@ -535,7 +537,7 @@ export function createSessionManager(options) {
     const session = sessions.get(sessionId);
     markSessionActivated(session);
     if (session?.fitAddon) {
-      session.fitAddon.fit();
+      safeFit(session);
       syncPtySize(session);
     }
     renderActiveSessionChrome();
@@ -555,23 +557,50 @@ export function createSessionManager(options) {
     return position <= 0 ? baseLabel : `${baseLabel} #${position + 1}`;
   }
 
+  // Detects whether a buffer ends in the middle of an ANSI escape sequence.
+  // Flushing an incomplete sequence causes xterm.js to misinterpret subsequent
+  // bytes, producing jumbled or garbled output. We detect this by checking if
+  // the buffer ends with ESC (0x1b) or ESC followed by '[', ']', 'P', 'X', '^',
+  // or a CSI/OSC parameter byte that expects more characters.
+  function endsWithIncompleteEscape(buffer) {
+    const len = buffer.length;
+    if (len === 0) return false;
+    const last = buffer.charCodeAt(len - 1);
+    if (last === 0x1b) return true;
+    if (len < 2) return false;
+    const secondLast = buffer.charCodeAt(len - 2);
+    if (secondLast === 0x1b) {
+      // ESC followed by one of these starters means more bytes are expected
+      const ch = buffer[len - 1];
+      return ch === "[" || ch === "]" || ch === "P" || ch === "X" || ch === "^" || ch === "_";
+    }
+    if (len < 3) return false;
+    const thirdLast = buffer.charCodeAt(len - 3);
+    if (secondLast === 0x1b && thirdLast === 0x1b) {
+      // Double ESC -- the last ESC is a standalone escape, already handled above
+      return false;
+    }
+    return false;
+  }
+
   function writeToSessionTerminal(session, output) {
     if (!session?.term) return;
 
-    // If output ends with \r, write immediately without buffering
-    // This prevents status line duplication from rapid in-place updates
+    // If output ends with \r, write immediately without buffering.
+    // This prevents status line duplication from rapid in-place updates.
+    // But first check that the existing buffer does not end mid-escape-sequence,
+    // since flushing an incomplete sequence would corrupt terminal rendering.
     if (output.endsWith("\r")) {
-      // Flush any existing buffer first
-      if (session.outputBuffer) {
+      if (session.outputTimeout) {
+        clearTimeout(session.outputTimeout);
+        session.outputTimeout = null;
+      }
+      if (session.outputBuffer && !endsWithIncompleteEscape(session.outputBuffer)) {
         session.term.write(session.outputBuffer);
         if (session.autoScrollEnabled) {
           session.term.scrollToBottom();
         }
         session.outputBuffer = "";
-      }
-      if (session.outputTimeout) {
-        clearTimeout(session.outputTimeout);
-        session.outputTimeout = null;
       }
       session.term.write(output);
       if (session.autoScrollEnabled) {
@@ -592,7 +621,28 @@ export function createSessionManager(options) {
         session.outputBuffer = "";
       }
       session.outputTimeout = null;
+      // Flush any fit that was deferred during the write burst
+      flushPendingFit(session);
     }, 16);
+  }
+
+  // Defer fitAddon.fit() if a write is in progress to avoid reflowing the
+  // terminal while xterm.js is mid-render. Prevents jumbled output during
+  // rapid data bursts (coding agents, progress bars, etc.).
+  function safeFit(session) {
+    if (!session?.fitAddon) return;
+    if (session.outputTimeout || session.outputBuffer) {
+      session.fitPending = true;
+      return;
+    }
+    session.fitAddon.fit();
+  }
+
+  function flushPendingFit(session) {
+    if (session.fitPending) {
+      session.fitPending = false;
+      safeFit(session);
+    }
   }
 
   function removeSession(sessionId) {
@@ -635,9 +685,19 @@ export function createSessionManager(options) {
     session.connectionState = normalizedState;
     session.serverId = session.server?.id || session.serverId;
 
+    // Clear output buffer and timeout on state transitions to prevent stale
+    // data from being written into a reset terminal (causes jumbled/duplicated output).
+    if (previousType !== normalizedState.type) {
+      if (session.outputTimeout) {
+        clearTimeout(session.outputTimeout);
+        session.outputTimeout = null;
+      }
+      session.outputBuffer = "";
+    }
+
     if (session.id === activeSessionId) {
       renderActiveSessionChrome({ resetTerminal: previousType !== normalizedState.type });
-      session.fitAddon?.fit();
+      safeFit(session);
     }
 
     const label = session.server
@@ -801,7 +861,7 @@ export function createSessionManager(options) {
     window.addEventListener("resize", () => {
       const active = getActiveSession();
       if (active?.fitAddon) {
-        active.fitAddon.fit();
+        safeFit(active);
         syncPtySize(active);
       }
     });
@@ -815,7 +875,7 @@ export function createSessionManager(options) {
         resizeRafId = null;
         const active = getActiveSession();
         if (active?.fitAddon) {
-          active.fitAddon.fit();
+          safeFit(active);
           syncPtySize(active);
           active.term?.scrollToBottom();
         }
