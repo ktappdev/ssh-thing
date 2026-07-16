@@ -589,47 +589,58 @@ export function createSessionManager(options) {
     return false;
   }
 
+  // Sequential write queue for xterm.js. Using write(data, callback) ensures
+  // each chunk is fully rendered before the next one starts, preventing
+  // overlapping writes that cause jumbled/duplicated output.
   function writeToSessionTerminal(session, output) {
     if (!session?.term) return;
 
-    // If output ends with \r, write immediately without buffering.
-    // This prevents status line duplication from rapid in-place updates.
-    // But first check that the existing buffer does not end mid-escape-sequence,
-    // since flushing an incomplete sequence would corrupt terminal rendering.
-    if (output.endsWith("\r")) {
-      if (session.outputTimeout) {
-        clearTimeout(session.outputTimeout);
+    // Append to buffer
+    session.outputBuffer = `${session.outputBuffer || ""}${output}`;
+
+    // If a write is already in flight, just accumulate -- the callback chain
+    // will pick up the new data when the current write finishes.
+    if (session.writeInProgress) return;
+
+    // Start the sequential write chain
+    flushWriteQueue(session);
+  }
+
+  function flushWriteQueue(session) {
+    if (!session?.term || session.writeInProgress) return;
+    if (!session.outputBuffer) return;
+
+    // Don't flush if the buffer ends mid-escape-sequence; wait for more data
+    if (endsWithIncompleteEscape(session.outputBuffer)) {
+      // Set a safety timeout so a truncated escape sequence doesn't hang forever
+      if (session.outputTimeout) clearTimeout(session.outputTimeout);
+      session.outputTimeout = setTimeout(() => {
         session.outputTimeout = null;
-      }
-      if (session.outputBuffer && !endsWithIncompleteEscape(session.outputBuffer)) {
-        session.term.write(session.outputBuffer);
-        if (session.autoScrollEnabled) {
-          session.term.scrollToBottom();
+        if (session.outputBuffer) {
+          session.writeInProgress = true;
+          const data = session.outputBuffer;
+          session.outputBuffer = "";
+          session.term.write(data, () => {
+            session.writeInProgress = false;
+            if (session.autoScrollEnabled) session.term.scrollToBottom();
+            flushPendingFit(session);
+            flushWriteQueue(session);
+          });
         }
-        session.outputBuffer = "";
-      }
-      session.term.write(output);
-      if (session.autoScrollEnabled) {
-        session.term.scrollToBottom();
-      }
+      }, 50);
       return;
     }
 
-    session.outputBuffer = `${session.outputBuffer || ""}${output}`;
-    if (session.outputTimeout) return;
-
-    session.outputTimeout = setTimeout(() => {
-      if (session.outputBuffer) {
-        session.term.write(session.outputBuffer);
-        if (session.autoScrollEnabled) {
-          session.term.scrollToBottom();
-        }
-        session.outputBuffer = "";
-      }
-      session.outputTimeout = null;
-      // Flush any fit that was deferred during the write burst
+    session.writeInProgress = true;
+    const data = session.outputBuffer;
+    session.outputBuffer = "";
+    session.term.write(data, () => {
+      session.writeInProgress = false;
+      if (session.autoScrollEnabled) session.term.scrollToBottom();
       flushPendingFit(session);
-    }, 16);
+      // Continue draining any new data that arrived during this write
+      flushWriteQueue(session);
+    });
   }
 
   // Defer fitAddon.fit() if a write is in progress to avoid reflowing the
@@ -637,7 +648,7 @@ export function createSessionManager(options) {
   // rapid data bursts (coding agents, progress bars, etc.).
   function safeFit(session) {
     if (!session?.fitAddon) return;
-    if (session.outputTimeout || session.outputBuffer) {
+    if (session.writeInProgress || session.outputBuffer || session.outputTimeout) {
       session.fitPending = true;
       return;
     }
@@ -657,6 +668,8 @@ export function createSessionManager(options) {
     if (session.outputTimeout) {
       clearTimeout(session.outputTimeout);
     }
+    session.outputBuffer = "";
+    session.writeInProgress = false;
     session.container?.remove();
     sessions.delete(sessionId);
 
@@ -699,6 +712,7 @@ export function createSessionManager(options) {
         session.outputTimeout = null;
       }
       session.outputBuffer = "";
+      session.writeInProgress = false;
     }
 
     if (session.id === activeSessionId) {
