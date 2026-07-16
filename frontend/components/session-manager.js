@@ -410,6 +410,10 @@ export function createSessionManager(options) {
       fastScrollModifier: "alt",
       rightClickSelectsWord: true,
       convertEol: true,
+      // Force DOM renderer to avoid WebGL damage-tracking bugs that cause
+      // stale/partial redraws (overlapping rows, misaligned borders) under
+      // high-frequency updates such as btop or multiplexer output.
+      rendererType: "dom",
     });
 
     const paneFitAddon = new window.FitAddon.FitAddon();
