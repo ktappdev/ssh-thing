@@ -393,11 +393,11 @@ export function createSessionManager(options) {
 
     if (typeof window.Terminal !== "function") {
       const term = createFallbackTerminal(pane, "Terminal engine failed to load. Connection list still works.");
-      return { term, fitAddon: { fit: () => {} }, searchAddon: null, container: pane };
+      return { term, fitAddon: { fit: () => {} }, searchAddon: null, container: pane, welcomeOverlay: null };
     }
     if (!window.FitAddon || typeof window.FitAddon.FitAddon !== "function") {
       const term = createFallbackTerminal(pane, "Terminal resize addon failed to load. Connection list still works.");
-      return { term, fitAddon: { fit: () => {} }, searchAddon: null, container: pane };
+      return { term, fitAddon: { fit: () => {} }, searchAddon: null, container: pane, welcomeOverlay: null };
     }
 
     const settings = options.getTerminalSettings();
@@ -421,9 +421,13 @@ export function createSessionManager(options) {
     termInstance.open(pane);
     paneFitAddon.fit();
 
+    // Centered welcome overlay for the empty terminal state
+    let welcomeOverlay = null;
     if (sessionId === welcomeSessionId) {
-      termInstance.writeln("\x1b[1;32mSSH Thing\x1b[0m");
-      termInstance.writeln("Connect to a server to begin...\r\n");
+      welcomeOverlay = document.createElement("div");
+      welcomeOverlay.className = "welcome-overlay";
+      welcomeOverlay.innerHTML = '<div class="welcome-overlay-content"><div class="welcome-overlay-title">SSH Thing</div><div class="welcome-overlay-subtitle">Connect to a server to begin...</div></div>';
+      pane.appendChild(welcomeOverlay);
     } else {
       termInstance.writeln("\x1b[1;32mConnecting...\x1b[0m\r\n");
     }
@@ -467,11 +471,11 @@ export function createSessionManager(options) {
       session.autoScrollEnabled = newRow >= maxScroll;
     });
 
-    return { term: termInstance, fitAddon: paneFitAddon, searchAddon, container: pane };
+    return { term: termInstance, fitAddon: paneFitAddon, searchAddon, container: pane, welcomeOverlay };
   }
 
   function createSession(server, connectionId = crypto.randomUUID()) {
-    const { term, fitAddon, searchAddon, container } = createTerminalPane(connectionId);
+    const { term, fitAddon, searchAddon, container, welcomeOverlay } = createTerminalPane(connectionId);
     const now = Date.now();
     const session = {
       id: connectionId,
@@ -482,6 +486,7 @@ export function createSessionManager(options) {
       fitAddon,
       searchAddon,
       container,
+      welcomeOverlay: welcomeOverlay || null,
       connectionState: { type: "Disconnected" },
       autoScrollEnabled: true,
       outputBuffer: "",
@@ -498,7 +503,7 @@ export function createSessionManager(options) {
 
   function ensureWelcomeSession() {
     if (sessions.has(welcomeSessionId)) return;
-    const { term, fitAddon, searchAddon, container } = createTerminalPane(welcomeSessionId);
+    const { term, fitAddon, searchAddon, container, welcomeOverlay } = createTerminalPane(welcomeSessionId);
     sessions.set(welcomeSessionId, {
       id: welcomeSessionId,
       serverId: null,
@@ -508,6 +513,7 @@ export function createSessionManager(options) {
       fitAddon,
       searchAddon,
       container,
+      welcomeOverlay,
       connectionState: { type: "Disconnected" },
       autoScrollEnabled: true,
       createdAt: Date.now(),
@@ -769,6 +775,10 @@ export function createSessionManager(options) {
         height: session.term.rows || 24,
       });
       session.shellId = newShellId;
+      // Hide the welcome overlay now that we have a real shell
+      if (session.welcomeOverlay) {
+        session.welcomeOverlay.style.display = "none";
+      }
       syncPtySize(session);
       updateConnectionState(session, "Connected");
       options.logConnectionEvent?.(
