@@ -551,7 +551,7 @@ export function createSessionManager(options) {
     const session = sessions.get(sessionId);
     markSessionActivated(session);
     if (session?.fitAddon) {
-      safeFit(session);
+      forceFit(session);
       syncPtySize(session);
     }
     renderActiveSessionChrome();
@@ -698,11 +698,21 @@ export function createSessionManager(options) {
     if (!session?.fitAddon) return;
     const busy = session.writeInProgress || session.outputBuffer || session.outputTimeout;
     const bufLen = (session.outputBuffer || "").length;
-    console.log(`[fit] safeFit called: writeInProgress=${session.writeInProgress}, buffer=${bufLen}, timeout=${!!session.outputTimeout} => ${busy ? 'DEFERRED' : 'FIT'}`);
     if (busy) {
       session.fitPending = true;
       return;
     }
+    session.fitAddon.fit();
+  }
+
+  // Force an immediate resize regardless of write state. Used when the
+  // terminal container changes size (e.g. multiplexer panel toggle).
+  // Without this, safeFit defers the fit until the current write finishes,
+  // causing btop to redraw at the old width first, then again at the new
+  // width — producing the visible double-render / corruption.
+  function forceFit(session) {
+    if (!session?.fitAddon) return;
+    session.fitPending = false;
     session.fitAddon.fit();
   }
 
@@ -937,7 +947,7 @@ export function createSessionManager(options) {
     window.addEventListener("resize", () => {
       const active = getActiveSession();
       if (active?.fitAddon) {
-        safeFit(active);
+        forceFit(active);
         syncPtySize(active);
       }
     });
@@ -951,7 +961,7 @@ export function createSessionManager(options) {
         resizeRafId = null;
         const active = getActiveSession();
         if (active?.fitAddon) {
-          safeFit(active);
+          forceFit(active);
           syncPtySize(active);
           active.term?.scrollToBottom();
         }
