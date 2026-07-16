@@ -24,7 +24,7 @@ let queuedHostKeys = [];
 let pendingDeleteTarget = null;
 let pendingDisconnectResolve = null;
 let pendingCloseAppResolve = null;
-let terminalTransparent = false;
+let terminalTransparent = true;
 let serverFilterTerm = "";
 let terminalSettings = loadTerminalSettings();
 let closeRequestInProgress = false;
@@ -151,6 +151,10 @@ function initTheme() {
   const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
   const isDark = savedTheme ? savedTheme === "dark" : prefersDark;
   document.documentElement.classList.toggle("dark", isDark);
+  // Glass terminal is the default when in dark mode
+  if (isDark) {
+    document.body.classList.add("terminal-transparent");
+  }
 }
 
 function renderHostKeyPrompt(prompt) {
@@ -829,7 +833,10 @@ function initTabs() {
 }
 
 function toggleFocusMode() {
+    const isFocus = !document.body.classList.contains('focus-mode-active');
     document.body.classList.toggle('focus-mode-active');
+    // Close slide-over panel when toggling focus mode
+    closeSlideOverPanel();
     setTimeout(() => {
         const active = getActiveSession();
         if (active?.id) {
@@ -838,6 +845,112 @@ function toggleFocusMode() {
         active?.term?.scrollToBottom?.();
         active?.term?.focus?.();
     }, 300);
+}
+
+// ---- Slide-over panel for focus mode ----
+let slideOverOpen = false;
+let slideOverActiveTab = 'servers';
+
+function openSlideOverPanel() {
+    if (slideOverOpen) return;
+    slideOverOpen = true;
+    document.body.classList.add('slide-over-open');
+    const panel = document.getElementById('slide-over-panel');
+    const backdrop = document.getElementById('slide-over-backdrop');
+    panel.classList.remove('hidden');
+    backdrop.classList.remove('hidden');
+    // Force reflow before applying transform
+    requestAnimationFrame(() => {
+        panel.classList.add('open');
+    });
+    refreshSlideOverContent();
+}
+
+function closeSlideOverPanel() {
+    if (!slideOverOpen) return;
+    slideOverOpen = false;
+    document.body.classList.remove('slide-over-open');
+    const panel = document.getElementById('slide-over-panel');
+    const backdrop = document.getElementById('slide-over-backdrop');
+    panel.classList.remove('open');
+    // Wait for transition before hiding
+    setTimeout(() => {
+        panel.classList.add('hidden');
+        backdrop.classList.add('hidden');
+    }, 200);
+}
+
+function refreshSlideOverContent() {
+    // Re-render slide-over lists using the same render functions as the sidebar
+    const slideServerList = document.getElementById('slide-server-list');
+    if (slideServerList) {
+        renderServerCards({
+            listEl: slideServerList,
+            filterWrap: null,
+            servers,
+            filterTerm: "",
+            getHostSummary: (serverId) => sessionManager.getHostSummary(serverId),
+            formatLastConnected,
+            onPrimaryAction: (serverId) => {
+                connectToServer(serverId);
+                closeSlideOverPanel();
+            },
+            onFocusServer: (serverId) => {
+                sessionManager.focusMostRecentSessionForServer(serverId);
+                closeSlideOverPanel();
+            },
+            onDuplicate: (serverId) => {
+                duplicateServer(serverId);
+                closeSlideOverPanel();
+            },
+            onEdit: (serverId) => {
+                openEditModal(serverId);
+                closeSlideOverPanel();
+            },
+            onDelete: (serverId) => {
+                deleteServer(serverId);
+                closeSlideOverPanel();
+            },
+        });
+    }
+    // Snippets and actions are rendered by their managers; for now just clone
+    const snippetList = document.getElementById('snippet-list');
+    const slideSnippetList = document.getElementById('slide-snippet-list');
+    if (snippetList && slideSnippetList) {
+        slideSnippetList.innerHTML = snippetList.innerHTML;
+        // Re-bind snippet run buttons
+        slideSnippetList.querySelectorAll('.snippet-run-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const id = btn.dataset.id;
+                const snippet = snippets.find((s) => s.id === id);
+                if (snippet) {
+                    executeSnippet(snippet);
+                    closeSlideOverPanel();
+                }
+            });
+        });
+    }
+    const actionList = document.getElementById('action-list');
+    const slideActionList = document.getElementById('slide-action-list');
+    if (actionList && slideActionList) {
+        slideActionList.innerHTML = actionList.innerHTML;
+    }
+}
+
+function setSlideOverTab(tabKey) {
+    slideOverActiveTab = tabKey;
+    ['servers', 'snippets', 'actions'].forEach(key => {
+        const view = document.getElementById(`slide-view-${key}`);
+        const tabBtn = document.getElementById(`slide-tab-${key}`);
+        if (view) {
+            view.classList.toggle('hidden', key !== tabKey);
+        }
+        if (tabBtn) {
+            tabBtn.classList.toggle('active', key === tabKey);
+            tabBtn.classList.toggle('inactive', key !== tabKey);
+        }
+    });
 }
 
 function disableInputCorrections() {
@@ -951,6 +1064,13 @@ window.addEventListener("DOMContentLoaded", () => {
     document.getElementById("focus-btn")?.addEventListener("click", toggleFocusMode);
     document.getElementById("exit-focus-btn")?.addEventListener("click", toggleFocusMode);
     document.getElementById("focus-toggle-btn")?.addEventListener("click", toggleFocusMode);
+    document.getElementById("header-focus-btn")?.addEventListener("click", toggleFocusMode);
+    document.getElementById("focus-panel-btn")?.addEventListener("click", openSlideOverPanel);
+    document.getElementById("slide-over-close")?.addEventListener("click", closeSlideOverPanel);
+    document.getElementById("slide-over-backdrop")?.addEventListener("click", closeSlideOverPanel);
+    document.getElementById("slide-tab-servers")?.addEventListener("click", () => setSlideOverTab('servers'));
+    document.getElementById("slide-tab-snippets")?.addEventListener("click", () => setSlideOverTab('snippets'));
+    document.getElementById("slide-tab-actions")?.addEventListener("click", () => setSlideOverTab('actions'));
     document.getElementById("terminal-bg-toggle")?.addEventListener("click", toggleTerminalBackground);
     document.getElementById("reconnect-btn")?.addEventListener("click", () => {
       sessionManager?.reconnectActiveSession();
@@ -987,6 +1107,8 @@ window.addEventListener("DOMContentLoaded", () => {
 
     initTerminal();
     applyTerminalSettings();
+    // Initialize slide-over panel default tab
+    setSlideOverTab('servers');
     
     document.getElementById("add-server-btn")?.addEventListener("click", openModal);
     
@@ -1112,6 +1234,18 @@ window.addEventListener("DOMContentLoaded", () => {
         e.preventDefault();
         toggleFocusMode();
       }
+      else if (e.shiftKey && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        if (slideOverOpen) {
+          closeSlideOverPanel();
+        } else {
+          openSlideOverPanel();
+        }
+      }
+    }
+    if (e.key === "Escape") {
+      closeTerminalSearch();
+      closeSlideOverPanel();
     }
     if (e.key === "Escape") {
       closeTerminalSearch();

@@ -506,6 +506,21 @@
         margin: 0;
       }
 
+      /* Header focus button hidden in focus mode */
+      .focus-mode-active #header-focus-btn {
+        display: none !important;
+      }
+
+      /* Focus mode panel button visible only in focus mode */
+      .focus-mode-active #focus-panel-btn {
+        display: flex !important;
+      }
+
+      /* Slide-over panel open state */
+      #slide-over-panel.open {
+        transform: translateX(0) !important;
+      }
+
       .window-maximized #app-container,
       .window-fullscreen #app-container {
         max-width: none;
@@ -1429,6 +1444,10 @@
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v6h6M20 20v-6h-6M5.64 18.36A9 9 0 1021 12"/></svg>
               <span>Reconnect</span>
             </button>
+            <button id="header-focus-btn" class="header-action-btn flex items-center gap-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded text-sm transition-colors shadow-sm" title="Focus Mode (⌘⇧F)">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+                <span>Focus</span>
+            </button>
             <button id="theme-toggle" class="icon-toggle-btn rounded-md bg-white dark:bg-gray-800 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors shadow-sm border-none" title="Toggle theme">
               <svg id="sun-icon" class="w-5 h-5 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -1490,7 +1509,7 @@
                         <span class="header-menu-item-subtitle">Switch between solid and glass</span>
                       </span>
                     </span>
-                    <span id="header-terminal-bg-label" class="header-menu-item-value">Solid</span>
+                    <span id="header-terminal-bg-label" class="header-menu-item-value">Glass</span>
                   </button>
                 </div>
               </div>
@@ -1521,6 +1540,42 @@
             </div>
             <div id="terminal-container" class="w-full h-full"></div>
         </div>
+
+        <!-- Focus mode slide-over panel toggle (visible only in focus mode) -->
+        <button id="focus-panel-btn" class="hidden absolute bottom-4 left-4 z-20 flex items-center gap-2 bg-gray-800/90 hover:bg-gray-700 text-white rounded-lg px-3 py-2 text-sm shadow-lg transition-all opacity-60 hover:opacity-100" title="Show sidebar (⌘⇧S)">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            <span>Servers</span>
+        </button>
+
+        <!-- Slide-over panel backdrop -->
+        <div id="slide-over-backdrop" class="hidden fixed inset-0 z-30 bg-black/40 backdrop-blur-sm transition-opacity"></div>
+
+        <!-- Slide-over panel -->
+        <aside id="slide-over-panel" class="hidden fixed top-0 left-0 h-full w-80 z-40 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 shadow-2xl flex flex-col transition-transform duration-200 ease-in-out" style="transform: translateX(-100%)">
+            <!-- Panel header -->
+            <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+                <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Quick Access</span>
+                <button id="slide-over-close" class="p-1 rounded-md text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <!-- Panel tab strip -->
+            <div class="sidebar-tab-strip flex border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 flex-shrink-0">
+                <button id="slide-tab-servers" class="tab-btn flex-1 text-sm font-medium">Servers</button>
+                <button id="slide-tab-snippets" class="tab-btn flex-1 text-sm font-medium">Snippets</button>
+                <button id="slide-tab-actions" class="tab-btn flex-1 text-sm font-medium">Actions</button>
+            </div>
+            <!-- Panel content areas (cloned from sidebar) -->
+            <div id="slide-view-servers" class="flex-1 flex flex-col min-h-0 overflow-y-auto">
+                <div id="slide-server-list" class="sidebar-list space-y-2"></div>
+            </div>
+            <div id="slide-view-snippets" class="flex-1 flex flex-col min-h-0 overflow-y-auto hidden">
+                <div id="slide-snippet-list" class="sidebar-list space-y-2"></div>
+            </div>
+            <div id="slide-view-actions" class="flex-1 flex flex-col min-h-0 overflow-y-auto hidden">
+                <div id="slide-action-list" class="sidebar-list space-y-2"></div>
+            </div>
+        </aside>
         
         <!-- Status Bar -->
         <div id="status-bar" class="mt-3 flex justify-between items-center px-4 py-2.5 bg-white dark:bg-gray-800 rounded-xl text-sm border border-gray-200 dark:border-gray-700 shadow-sm flex-shrink-0">
