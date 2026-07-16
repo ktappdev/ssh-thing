@@ -674,7 +674,7 @@ export function createSessionManager(options) {
             flushWriteQueue(session);
           });
         }
-      }, 50);
+      }, 10);
       return;
     }
 
