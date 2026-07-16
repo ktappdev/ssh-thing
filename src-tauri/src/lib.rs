@@ -1265,15 +1265,14 @@ pub async fn open_pty_shell(
                     let Some(msg) = msg else {
                         let pending = osc52_processor.flush_pending();
                         if !pending.is_empty() {
-                            if let Ok(s) = std::str::from_utf8(&pending) {
-                                let payload = TerminalOutput {
-                                    connection_id: Some(connection_id_for_task.clone()),
-                                    server_id: Some(server_id_for_task.clone()),
-                                    shell_id: shell_id_for_task.clone(),
-                                    output: s.to_string(),
-                                };
-                                let _ = app_for_task.emit("terminal-output", payload);
-                            }
+                            let s = String::from_utf8_lossy(&pending);
+                            let payload = TerminalOutput {
+                                connection_id: Some(connection_id_for_task.clone()),
+                                server_id: Some(server_id_for_task.clone()),
+                                shell_id: shell_id_for_task.clone(),
+                                output: s.into_owned(),
+                            };
+                            let _ = app_for_task.emit("terminal-output", payload);
                         }
                         #[cfg(debug_assertions)]
                         debug!(shell_id = %shell_id_for_task, "Read loop stopped");
@@ -1284,29 +1283,27 @@ pub async fn open_pty_shell(
                         russh::ChannelMsg::Data { ref data } => {
                             let filtered = osc52_processor.process(data);
                             if !filtered.is_empty() {
-                                if let Ok(s) = std::str::from_utf8(&filtered) {
-                                    let payload = TerminalOutput {
-                                        connection_id: Some(connection_id_for_task.clone()),
-                                        server_id: Some(server_id_for_task.clone()),
-                                        shell_id: shell_id_for_task.clone(),
-                                        output: s.to_string(),
-                                    };
-                                    let _ = app_for_task.emit("terminal-output", payload);
-                                }
+                                let s = String::from_utf8_lossy(&filtered);
+                                let payload = TerminalOutput {
+                                    connection_id: Some(connection_id_for_task.clone()),
+                                    server_id: Some(server_id_for_task.clone()),
+                                    shell_id: shell_id_for_task.clone(),
+                                    output: s.into_owned(),
+                                };
+                                let _ = app_for_task.emit("terminal-output", payload);
                             }
                         }
                         russh::ChannelMsg::ExitStatus { exit_status } => {
                             let pending = osc52_processor.flush_pending();
                             if !pending.is_empty() {
-                                if let Ok(s) = std::str::from_utf8(&pending) {
-                                    let payload = TerminalOutput {
-                                        connection_id: Some(connection_id_for_task.clone()),
-                                        server_id: Some(server_id_for_task.clone()),
-                                        shell_id: shell_id_for_task.clone(),
-                                        output: s.to_string(),
-                                    };
-                                    let _ = app_for_task.emit("terminal-output", payload);
-                                }
+                                let s = String::from_utf8_lossy(&pending);
+                                let payload = TerminalOutput {
+                                    connection_id: Some(connection_id_for_task.clone()),
+                                    server_id: Some(server_id_for_task.clone()),
+                                    shell_id: shell_id_for_task.clone(),
+                                    output: s.into_owned(),
+                                };
+                                let _ = app_for_task.emit("terminal-output", payload);
                             }
                             let output =
                                 format!("\r\n\r\nConnection closed (exit code: {})\r\n", exit_status);
@@ -1360,15 +1357,14 @@ pub async fn open_pty_shell(
                         Some(ShellCommand::Close) | None => {
                             let pending = osc52_processor.flush_pending();
                             if !pending.is_empty() {
-                                if let Ok(s) = std::str::from_utf8(&pending) {
-                                    let payload = TerminalOutput {
-                                        connection_id: Some(connection_id_for_task.clone()),
-                                        server_id: Some(server_id_for_task.clone()),
-                                        shell_id: shell_id_for_task.clone(),
-                                        output: s.to_string(),
-                                    };
-                                    let _ = app_for_task.emit("terminal-output", payload);
-                                }
+                                let s = String::from_utf8_lossy(&pending);
+                                let payload = TerminalOutput {
+                                    connection_id: Some(connection_id_for_task.clone()),
+                                    server_id: Some(server_id_for_task.clone()),
+                                    shell_id: shell_id_for_task.clone(),
+                                    output: s.into_owned(),
+                                };
+                                let _ = app_for_task.emit("terminal-output", payload);
                             }
                             let _ = channel_for_task.close().await;
                             break;
