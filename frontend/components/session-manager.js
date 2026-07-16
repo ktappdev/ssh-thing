@@ -636,6 +636,7 @@ export function createSessionManager(options) {
     session.outputBuffer = "";
     session.term.write(data, () => {
       session.writeInProgress = false;
+      console.log(`[write] write complete, buffer=${session.outputBuffer.length}, fitPending=${session.fitPending}`);
       if (session.autoScrollEnabled) session.term.scrollToBottom();
       flushPendingFit(session);
       // Continue draining any new data that arrived during this write
@@ -648,7 +649,9 @@ export function createSessionManager(options) {
   // rapid data bursts (coding agents, progress bars, etc.).
   function safeFit(session) {
     if (!session?.fitAddon) return;
-    if (session.writeInProgress || session.outputBuffer || session.outputTimeout) {
+    const busy = session.writeInProgress || session.outputBuffer || session.outputTimeout;
+    console.log(`[fit] safeFit called: writeInProgress=${session.writeInProgress}, buffer=${session.outputBuffer.length}, timeout=${!!session.outputTimeout} => ${busy ? 'DEFERRED' : 'FIT'}`);
+    if (busy) {
       session.fitPending = true;
       return;
     }
@@ -658,6 +661,7 @@ export function createSessionManager(options) {
   function flushPendingFit(session) {
     if (session.fitPending) {
       session.fitPending = false;
+      console.log(`[fit] flushPendingFit => calling safeFit`);
       safeFit(session);
     }
   }
