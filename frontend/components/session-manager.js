@@ -576,24 +576,63 @@ export function createSessionManager(options) {
   // bytes, producing jumbled or garbled output. We detect this by checking if
   // the buffer ends with ESC (0x1b) or ESC followed by '[', ']', 'P', 'X', '^',
   // or a CSI/OSC parameter byte that expects more characters.
+  // Scans backwards from the end of the buffer to find the last ESC byte,
+  // then determines whether the escape sequence starting at that position is
+  // complete. Returns true if the buffer ends in the middle of a sequence,
+  // false if the buffer ends with complete data.
   function endsWithIncompleteEscape(buffer) {
     const len = buffer.length;
     if (len === 0) return false;
-    const last = buffer.charCodeAt(len - 1);
-    if (last === 0x1b) return true;
-    if (len < 2) return false;
-    const secondLast = buffer.charCodeAt(len - 2);
-    if (secondLast === 0x1b) {
-      // ESC followed by one of these starters means more bytes are expected
-      const ch = buffer[len - 1];
-      return ch === "[" || ch === "]" || ch === "P" || ch === "X" || ch === "^" || ch === "_";
+
+    // Scan backwards to find the last ESC (0x1b)
+    let escPos = -1;
+    for (let i = len - 1; i >= 0; i--) {
+      if (buffer.charCodeAt(i) === 0x1b) {
+        escPos = i;
+        break;
+      }
     }
-    if (len < 3) return false;
-    const thirdLast = buffer.charCodeAt(len - 3);
-    if (secondLast === 0x1b && thirdLast === 0x1b) {
-      // Double ESC -- the last ESC is a standalone escape, already handled above
-      return false;
+
+    // No ESC found near the end — buffer is complete
+    if (escPos === -1) return false;
+
+    // ESC is the very last byte — definitely incomplete
+    if (escPos === len - 1) return true;
+
+    const afterEsc = escPos + 1;
+    const starter = buffer.charCodeAt(afterEsc);
+
+    // CSI sequence: ESC [ <params> <intermediates> <final>
+    // Final byte range: 0x40–0x7E
+    if (starter === 0x5b) { // '['
+      for (let i = afterEsc + 1; i < len; i++) {
+        const ch = buffer.charCodeAt(i);
+        if (ch >= 0x40 && ch <= 0x7e) return false; // final byte found → complete
+      }
+      return true; // no final byte yet → incomplete
     }
+
+    // OSC / DCS / SOS / PM / APC sequences: ESC ]/P/X/^/_ <data> <terminator>
+    // Terminated by BEL (0x07) or ST (ESC \\ = 0x1b 0x5c)
+    if (starter === 0x5d || starter === 0x50 || starter === 0x58 || starter === 0x5e || starter === 0x5f) {
+      for (let i = afterEsc + 1; i < len; i++) {
+        const ch = buffer.charCodeAt(i);
+        if (ch === 0x07) return false; // BEL terminated
+        if (ch === 0x1b && i + 1 < len && buffer.charCodeAt(i + 1) === 0x5c) return false; // ST terminated
+      }
+      return true; // not terminated → incomplete
+    }
+
+    // ESC followed by a byte in 0x40–0x5F is a complete 2-byte sequence
+    if (starter >= 0x40 && starter <= 0x5f) return false;
+
+    // ESC followed by 0x20–0x2F needs one more byte (the final byte)
+    if (starter >= 0x20 && starter <= 0x2f) {
+      if (afterEsc + 1 < len) return false; // third byte present → complete
+      return true; // only 2 bytes so far → incomplete
+    }
+
+    // Other ESC sequences are typically complete 2-byte sequences
     return false;
   }
 
