@@ -493,10 +493,6 @@ export function createSessionManager(options) {
       welcomeOverlay: welcomeOverlay || null,
       connectionState: { type: "Disconnected" },
       autoScrollEnabled: true,
-      outputBuffer: "",
-      outputTimeout: null,
-      writeInProgress: false,
-      fitPending: false,
       createdAt: now,
       lastActivatedAt: now,
       pendingExplicitDisconnect: false,
@@ -520,10 +516,6 @@ export function createSessionManager(options) {
       welcomeOverlay,
       connectionState: { type: "Disconnected" },
       autoScrollEnabled: true,
-      outputBuffer: "",
-      outputTimeout: null,
-      writeInProgress: false,
-      fitPending: false,
       createdAt: Date.now(),
       lastActivatedAt: Date.now(),
       pendingExplicitDisconnect: false,
@@ -551,7 +543,7 @@ export function createSessionManager(options) {
     const session = sessions.get(sessionId);
     markSessionActivated(session);
     if (session?.fitAddon) {
-      forceFit(session);
+      safeFit(session);
       syncPtySize(session);
     }
     renderActiveSessionChrome();
@@ -571,167 +563,25 @@ export function createSessionManager(options) {
     return position <= 0 ? baseLabel : `${baseLabel} #${position + 1}`;
   }
 
-  // Detects whether a buffer ends in the middle of an ANSI escape sequence.
-  // Flushing an incomplete sequence causes xterm.js to misinterpret subsequent
-  // bytes, producing jumbled or garbled output. We detect this by checking if
-  // the buffer ends with ESC (0x1b) or ESC followed by '[', ']', 'P', 'X', '^',
-  // or a CSI/OSC parameter byte that expects more characters.
-  // Scans backwards from the end of the buffer to find the last ESC byte,
-  // then determines whether the escape sequence starting at that position is
-  // complete. Returns true if the buffer ends in the middle of a sequence,
-  // false if the buffer ends with complete data.
-  function endsWithIncompleteEscape(buffer) {
-    const len = buffer.length;
-    if (len === 0) return false;
-
-    // Scan backwards to find the last ESC (0x1b)
-    let escPos = -1;
-    for (let i = len - 1; i >= 0; i--) {
-      if (buffer.charCodeAt(i) === 0x1b) {
-        escPos = i;
-        break;
-      }
-    }
-
-    // No ESC found near the end — buffer is complete
-    if (escPos === -1) return false;
-
-    // ESC is the very last byte — definitely incomplete
-    if (escPos === len - 1) return true;
-
-    const afterEsc = escPos + 1;
-    const starter = buffer.charCodeAt(afterEsc);
-
-    // CSI sequence: ESC [ <params> <intermediates> <final>
-    // Final byte range: 0x40–0x7E
-    if (starter === 0x5b) { // '['
-      for (let i = afterEsc + 1; i < len; i++) {
-        const ch = buffer.charCodeAt(i);
-        if (ch >= 0x40 && ch <= 0x7e) return false; // final byte found → complete
-      }
-      return true; // no final byte yet → incomplete
-    }
-
-    // OSC / DCS / SOS / PM / APC sequences: ESC ]/P/X/^/_ <data> <terminator>
-    // Terminated by BEL (0x07) or ST (ESC \\ = 0x1b 0x5c)
-    if (starter === 0x5d || starter === 0x50 || starter === 0x58 || starter === 0x5e || starter === 0x5f) {
-      for (let i = afterEsc + 1; i < len; i++) {
-        const ch = buffer.charCodeAt(i);
-        if (ch === 0x07) return false; // BEL terminated
-        if (ch === 0x1b && i + 1 < len && buffer.charCodeAt(i + 1) === 0x5c) return false; // ST terminated
-      }
-      return true; // not terminated → incomplete
-    }
-
-    // ESC followed by a byte in 0x40–0x5F is a complete 2-byte sequence
-    if (starter >= 0x40 && starter <= 0x5f) return false;
-
-    // ESC followed by 0x20–0x2F needs one more byte (the final byte)
-    if (starter >= 0x20 && starter <= 0x2f) {
-      if (afterEsc + 1 < len) return false; // third byte present → complete
-      return true; // only 2 bytes so far → incomplete
-    }
-
-    // Other ESC sequences are typically complete 2-byte sequences
-    return false;
-  }
-
-  // Sequential write queue for xterm.js. Using write(data, callback) ensures
-  // each chunk is fully rendered before the next one starts, preventing
-  // overlapping writes that cause jumbled/duplicated output.
+  // Write terminal output directly to xterm.js. xterm.js internally
+  // buffers and handles partial escape sequences across multiple write()
+  // calls — no manual escape-sequence detection or write queue needed.
   function writeToSessionTerminal(session, output) {
     if (!session?.term) return;
-
-    // Append to buffer
-    session.outputBuffer = `${session.outputBuffer || ""}${output}`;
-
-    // If a write is already in flight, just accumulate -- the callback chain
-    // will pick up the new data when the current write finishes.
-    if (session.writeInProgress) return;
-
-    // Start the sequential write chain
-    flushWriteQueue(session);
-  }
-
-  function flushWriteQueue(session) {
-    if (!session?.term || session.writeInProgress) return;
-    if (!session.outputBuffer) return;
-
-    // Don't flush if the buffer ends mid-escape-sequence; wait for more data
-    if (endsWithIncompleteEscape(session.outputBuffer)) {
-      // Set a safety timeout so a truncated escape sequence doesn't hang forever
-      if (session.outputTimeout) clearTimeout(session.outputTimeout);
-      session.outputTimeout = setTimeout(() => {
-        session.outputTimeout = null;
-        if (session.outputBuffer) {
-          session.writeInProgress = true;
-          const data = session.outputBuffer;
-          session.outputBuffer = "";
-          session.term.write(data, () => {
-            session.writeInProgress = false;
-            if (session.autoScrollEnabled) session.term.scrollToBottom();
-            flushPendingFit(session);
-            flushWriteQueue(session);
-          });
-        }
-      }, 10);
-      return;
-    }
-
-    session.writeInProgress = true;
-    const data = session.outputBuffer;
-    session.outputBuffer = "";
-    session.term.write(data, () => {
-      session.writeInProgress = false;
-      console.log(`[write] write complete, buffer=${(session.outputBuffer || '').length}, fitPending=${session.fitPending}`);
+    session.term.write(output, () => {
       if (session.autoScrollEnabled) session.term.scrollToBottom();
-      flushPendingFit(session);
-      // Continue draining any new data that arrived during this write
-      flushWriteQueue(session);
+      safeFit(session);
     });
   }
 
-  // Defer fitAddon.fit() if a write is in progress to avoid reflowing the
-  // terminal while xterm.js is mid-render. Prevents jumbled output during
-  // rapid data bursts (coding agents, progress bars, etc.).
   function safeFit(session) {
     if (!session?.fitAddon) return;
-    const busy = session.writeInProgress || session.outputBuffer || session.outputTimeout;
-    const bufLen = (session.outputBuffer || "").length;
-    if (busy) {
-      session.fitPending = true;
-      return;
-    }
     session.fitAddon.fit();
-  }
-
-  // Force an immediate resize regardless of write state. Used when the
-  // terminal container changes size (e.g. multiplexer panel toggle).
-  // Without this, safeFit defers the fit until the current write finishes,
-  // causing btop to redraw at the old width first, then again at the new
-  // width — producing the visible double-render / corruption.
-  function forceFit(session) {
-    if (!session?.fitAddon) return;
-    session.fitPending = false;
-    session.fitAddon.fit();
-  }
-
-  function flushPendingFit(session) {
-    if (session.fitPending) {
-      session.fitPending = false;
-      console.log(`[fit] flushPendingFit => calling safeFit`);
-      safeFit(session);
-    }
   }
 
   function removeSession(sessionId) {
     const session = sessions.get(sessionId);
     if (!session) return;
-    if (session.outputTimeout) {
-      clearTimeout(session.outputTimeout);
-    }
-    session.outputBuffer = "";
-    session.writeInProgress = false;
     session.container?.remove();
     sessions.delete(sessionId);
 
@@ -769,12 +619,6 @@ export function createSessionManager(options) {
     // Clear output buffer and timeout on state transitions to prevent stale
     // data from being written into a reset terminal (causes jumbled/duplicated output).
     if (previousType !== normalizedState.type) {
-      if (session.outputTimeout) {
-        clearTimeout(session.outputTimeout);
-        session.outputTimeout = null;
-      }
-      session.outputBuffer = "";
-      session.writeInProgress = false;
     }
 
     if (session.id === activeSessionId) {
@@ -947,7 +791,7 @@ export function createSessionManager(options) {
     window.addEventListener("resize", () => {
       const active = getActiveSession();
       if (active?.fitAddon) {
-        forceFit(active);
+        safeFit(active);
         syncPtySize(active);
       }
     });
@@ -961,7 +805,7 @@ export function createSessionManager(options) {
         resizeRafId = null;
         const active = getActiveSession();
         if (active?.fitAddon) {
-          forceFit(active);
+          safeFit(active);
           syncPtySize(active);
           active.term?.scrollToBottom();
         }
