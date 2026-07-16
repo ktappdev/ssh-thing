@@ -516,6 +516,10 @@ export function createSessionManager(options) {
       welcomeOverlay,
       connectionState: { type: "Disconnected" },
       autoScrollEnabled: true,
+      outputBuffer: "",
+      outputTimeout: null,
+      writeInProgress: false,
+      fitPending: false,
       createdAt: Date.now(),
       lastActivatedAt: Date.now(),
       pendingExplicitDisconnect: false,
@@ -636,7 +640,7 @@ export function createSessionManager(options) {
     session.outputBuffer = "";
     session.term.write(data, () => {
       session.writeInProgress = false;
-      console.log(`[write] write complete, buffer=${session.outputBuffer.length}, fitPending=${session.fitPending}`);
+      console.log(`[write] write complete, buffer=${(session.outputBuffer || '').length}, fitPending=${session.fitPending}`);
       if (session.autoScrollEnabled) session.term.scrollToBottom();
       flushPendingFit(session);
       // Continue draining any new data that arrived during this write
@@ -650,7 +654,8 @@ export function createSessionManager(options) {
   function safeFit(session) {
     if (!session?.fitAddon) return;
     const busy = session.writeInProgress || session.outputBuffer || session.outputTimeout;
-    console.log(`[fit] safeFit called: writeInProgress=${session.writeInProgress}, buffer=${session.outputBuffer.length}, timeout=${!!session.outputTimeout} => ${busy ? 'DEFERRED' : 'FIT'}`);
+    const bufLen = (session.outputBuffer || "").length;
+    console.log(`[fit] safeFit called: writeInProgress=${session.writeInProgress}, buffer=${bufLen}, timeout=${!!session.outputTimeout} => ${busy ? 'DEFERRED' : 'FIT'}`);
     if (busy) {
       session.fitPending = true;
       return;
