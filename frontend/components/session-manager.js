@@ -568,10 +568,8 @@ export function createSessionManager(options) {
   // calls — no manual escape-sequence detection or write queue needed.
   function writeToSessionTerminal(session, output) {
     if (!session?.term) return;
-    session.term.write(output, () => {
-      if (session.autoScrollEnabled) session.term.scrollToBottom();
-      safeFit(session);
-    });
+    session.term.write(output);
+    if (session.autoScrollEnabled) session.term.scrollToBottom();
   }
 
   function safeFit(session) {
