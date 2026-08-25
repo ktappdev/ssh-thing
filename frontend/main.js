@@ -101,6 +101,7 @@ function showAlert(title, message, type = "error") {
   alertIconSvg.innerHTML = getIconForType(type);
 
   alertModal.classList.remove("hidden");
+  requestAnimationFrame(() => document.getElementById("alert-ok-btn")?.focus());
 
   document.getElementById("alert-ok-btn").onclick = () => {
     alertModal.classList.add("hidden");
@@ -155,6 +156,24 @@ function initTheme() {
   if (isDark) {
     document.body.classList.add("terminal-transparent");
   }
+  syncThemeToggle(isDark);
+  syncTerminalBackgroundToggle(isDark);
+}
+
+function syncThemeToggle(isDark = document.documentElement.classList.contains("dark")) {
+  const toggle = document.getElementById("theme-toggle");
+  if (!toggle) return;
+  toggle.setAttribute("aria-label", isDark ? "Switch to light theme" : "Switch to dark theme");
+  toggle.setAttribute("title", isDark ? "Switch to light theme" : "Switch to dark theme");
+}
+
+function syncTerminalBackgroundToggle(isDark = document.documentElement.classList.contains("dark")) {
+  const isGlass = terminalTransparent && isDark;
+  const label = document.getElementById("header-terminal-bg-label");
+  if (label) {
+    label.textContent = isGlass ? "Glass" : "Solid";
+  }
+  document.getElementById("terminal-bg-toggle")?.setAttribute("aria-checked", String(isGlass));
 }
 
 function renderHostKeyPrompt(prompt) {
@@ -163,6 +182,7 @@ function renderHostKeyPrompt(prompt) {
   document.getElementById("host-key-type").textContent = prompt.key_type;
   document.getElementById("host-key-fingerprint").textContent = prompt.fingerprint;
   document.getElementById("host-key-modal").classList.remove("hidden");
+  requestAnimationFrame(() => document.getElementById("host-key-reject")?.focus());
 }
 
 function openHostKeyModal(prompt) {
@@ -189,6 +209,7 @@ function openDeleteModal({ kind, id, label, onConfirm = null }) {
   }
   pendingDeleteTarget = { kind, id, onConfirm };
   modal?.classList.remove("hidden");
+  requestAnimationFrame(() => document.getElementById("delete-cancel-btn")?.focus());
 }
 
 function closeHostKeyModal() {
@@ -204,6 +225,7 @@ function drainHostKeyQueue() {
 function toggleTheme() {
   const isDark = document.documentElement.classList.toggle("dark");
   localStorage.setItem("theme", isDark ? "dark" : "light");
+  syncThemeToggle(isDark);
   sessionManager?.refreshTerminalTheme();
 }
 
@@ -211,10 +233,7 @@ function toggleTerminalBackground() {
   const isDark = document.documentElement.classList.contains("dark");
   terminalTransparent = isDark ? !terminalTransparent : false;
   document.body.classList.toggle("terminal-transparent", terminalTransparent && isDark);
-  const label = document.getElementById("header-terminal-bg-label");
-  if (label) {
-    label.textContent = terminalTransparent && isDark ? "Glass" : "Solid";
-  }
+  syncTerminalBackgroundToggle(isDark);
   sessionManager?.refreshTerminalTheme();
 }
 
@@ -322,6 +341,7 @@ function openModal() {
   if (timeoutInput) {
     timeoutInput.value = "30";
   }
+  requestAnimationFrame(() => document.getElementById("server-nickname")?.focus());
 }
 
 function closeModal() {
@@ -379,6 +399,7 @@ function openEditModal(id) {
     document.getElementById("server-key").value = server.auth.private_key || "";
     document.getElementById("server-key").placeholder = "";
   }
+  requestAnimationFrame(() => document.getElementById("server-nickname")?.focus());
 }
 
 async function saveServer(e) {
@@ -519,13 +540,14 @@ function renderSnippetList() {
     const div = document.createElement("div");
     div.className = "snippet-item bg-white dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700/80 rounded-lg px-3 py-2.5 shadow-sm group flex items-center gap-3 relative";
     div.dataset.id = snippet.id;
+    div.setAttribute("role", "listitem");
     
     const firstPart = snippet.command.split('&&')[0].trim();
     const displayCommand = firstPart.length > 28 ? firstPart.substring(0, 28) + '...' : firstPart;
     const hasMore = snippet.command.includes('&&') || snippet.command.length > 28;
     
     div.innerHTML = `
-      <div class="w-2 h-2 rounded-full bg-blue-400 dark:bg-blue-500/60 flex-shrink-0"></div>
+      <div class="w-2 h-2 rounded-full bg-blue-400 dark:bg-blue-500/60 flex-shrink-0" aria-hidden="true"></div>
       <div class="min-w-0 flex-1">
         <div class="server-card-name truncate">${snippet.name}</div>
         <div class="server-card-subtitle font-mono truncate text-blue-600/70 dark:text-blue-400/70">${displayCommand}${hasMore ? ' <span class="text-gray-400 dark:text-gray-500">+more</span>' : ''}</div>
@@ -549,6 +571,9 @@ function renderSnippetList() {
     const textContent = div.querySelector('.min-w-0');
     const actionBtns = div.querySelector('.server-actions');
     const runBtn = div.querySelector('.snippet-run-btn');
+    div.querySelector(".snippet-edit-btn")?.setAttribute("aria-label", `Edit ${snippet.name}`);
+    div.querySelector(".snippet-delete-btn")?.setAttribute("aria-label", `Delete ${snippet.name}`);
+    runBtn?.setAttribute("aria-label", `Run ${snippet.name} in the active terminal`);
     
     div.addEventListener('mouseleave', () => {
       tooltip.classList.add('hidden');
@@ -595,6 +620,7 @@ function openSnippetModal() {
   document.getElementById("snippet-modal-title").textContent = "Add Snippet";
   document.getElementById("snippet-form").reset();
   document.getElementById("snippet-id").value = "";
+  requestAnimationFrame(() => document.getElementById("snippet-name")?.focus());
 }
 
 function closeSnippetModal() {
@@ -609,6 +635,7 @@ function openTerminalSettingsModal() {
   fontSizeInput.value = String(terminalSettings.fontSize);
   scrollbackInput.value = String(terminalSettings.scrollback);
   modal.classList.remove("hidden");
+  requestAnimationFrame(() => fontSizeInput.focus());
 }
 
 function closeTerminalSettingsModal() {
@@ -673,6 +700,7 @@ function resolveCloseAppConfirm(result) {
 
 function confirmCloseApp() {
   document.getElementById("close-app-modal")?.classList.remove("hidden");
+  requestAnimationFrame(() => document.getElementById("close-app-cancel")?.focus());
   return new Promise((resolve) => {
     pendingCloseAppResolve = resolve;
   });
@@ -696,6 +724,7 @@ function confirmDisconnect(label) {
   if (modal) {
     modal.classList.remove("hidden");
   }
+  requestAnimationFrame(() => document.getElementById("disconnect-cancel-btn")?.focus());
   return new Promise((resolve) => {
     pendingDisconnectResolve = resolve;
   });
@@ -711,6 +740,7 @@ function openSnippetEditModal(id) {
   document.getElementById("snippet-name").value = snippet.name;
   document.getElementById("snippet-command").value = snippet.command;
   document.getElementById("snippet-description").value = snippet.description || "";
+  requestAnimationFrame(() => document.getElementById("snippet-name")?.focus());
 }
 
 async function saveSnippet(e) {
@@ -820,13 +850,33 @@ function initTabs() {
         const isActive = key === activeKey;
         button.classList.toggle("active", isActive);
         button.classList.toggle("inactive", !isActive);
+        button.setAttribute("aria-selected", String(isActive));
+        button.tabIndex = isActive ? 0 : -1;
         view.classList.toggle("hidden", !isActive);
+        view.setAttribute("aria-hidden", String(!isActive));
       });
     }
 
     tabs.forEach(({ key, button }) => {
       button.classList.add("tab-btn");
       button.addEventListener("click", () => setActiveTab(key));
+      button.addEventListener("keydown", (event) => {
+        const currentIndex = tabs.findIndex((tab) => tab.key === key);
+        const nextIndex = event.key === "ArrowRight"
+          ? (currentIndex + 1) % tabs.length
+          : event.key === "ArrowLeft"
+            ? (currentIndex - 1 + tabs.length) % tabs.length
+            : event.key === "Home"
+              ? 0
+              : event.key === "End"
+                ? tabs.length - 1
+                : null;
+        if (nextIndex === null) return;
+        event.preventDefault();
+        const nextTab = tabs[nextIndex];
+        setActiveTab(nextTab.key);
+        nextTab.button.focus();
+      });
     });
 
     setActiveTab("servers");
@@ -835,6 +885,10 @@ function initTabs() {
 function toggleFocusMode() {
     const isFocus = !document.body.classList.contains('focus-mode-active');
     document.body.classList.toggle('focus-mode-active');
+    document.getElementById("focus-btn")?.setAttribute("aria-pressed", String(isFocus));
+    document.getElementById("exit-focus-btn")?.setAttribute("aria-pressed", String(isFocus));
+    document.getElementById("header-focus-btn")?.setAttribute("aria-pressed", String(isFocus));
+    document.getElementById("focus-toggle-btn")?.setAttribute("aria-checked", String(isFocus));
     // Close slide-over panel when toggling focus mode
     closeSlideOverPanel();
     setTimeout(() => {
@@ -859,11 +913,13 @@ function openSlideOverPanel() {
     const backdrop = document.getElementById('slide-over-backdrop');
     panel.classList.remove('hidden');
     backdrop.classList.remove('hidden');
+    document.getElementById("focus-panel-btn")?.setAttribute("aria-expanded", "true");
     // Force reflow before applying transform
     requestAnimationFrame(() => {
         panel.classList.add('open');
     });
     refreshSlideOverContent();
+    requestAnimationFrame(() => document.getElementById("slide-over-close")?.focus());
 }
 
 function closeSlideOverPanel() {
@@ -873,6 +929,7 @@ function closeSlideOverPanel() {
     const panel = document.getElementById('slide-over-panel');
     const backdrop = document.getElementById('slide-over-backdrop');
     panel.classList.remove('open');
+    document.getElementById("focus-panel-btn")?.setAttribute("aria-expanded", "false");
     // Wait for transition before hiding
     setTimeout(() => {
         panel.classList.add('hidden');
@@ -945,12 +1002,32 @@ function setSlideOverTab(tabKey) {
         const tabBtn = document.getElementById(`slide-tab-${key}`);
         if (view) {
             view.classList.toggle('hidden', key !== tabKey);
+            view.setAttribute("aria-hidden", String(key !== tabKey));
         }
         if (tabBtn) {
             tabBtn.classList.toggle('active', key === tabKey);
             tabBtn.classList.toggle('inactive', key !== tabKey);
+            tabBtn.setAttribute("aria-selected", String(key === tabKey));
+            tabBtn.tabIndex = key === tabKey ? 0 : -1;
         }
     });
+}
+
+function moveSlideOverTab(event) {
+    if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
+    const keys = ['servers', 'snippets', 'actions'];
+    const currentIndex = keys.indexOf(slideOverActiveTab);
+    const nextIndex = event.key === 'ArrowRight'
+        ? (currentIndex + 1) % keys.length
+        : event.key === 'ArrowLeft'
+            ? (currentIndex - 1 + keys.length) % keys.length
+            : event.key === 'Home'
+                ? 0
+                : keys.length - 1;
+    event.preventDefault();
+    const nextKey = keys[nextIndex];
+    setSlideOverTab(nextKey);
+    document.getElementById(`slide-tab-${nextKey}`)?.focus();
 }
 
 function disableInputCorrections() {
@@ -1071,6 +1148,9 @@ window.addEventListener("DOMContentLoaded", () => {
     document.getElementById("slide-tab-servers")?.addEventListener("click", () => setSlideOverTab('servers'));
     document.getElementById("slide-tab-snippets")?.addEventListener("click", () => setSlideOverTab('snippets'));
     document.getElementById("slide-tab-actions")?.addEventListener("click", () => setSlideOverTab('actions'));
+    document.getElementById("slide-tab-servers")?.addEventListener("keydown", moveSlideOverTab);
+    document.getElementById("slide-tab-snippets")?.addEventListener("keydown", moveSlideOverTab);
+    document.getElementById("slide-tab-actions")?.addEventListener("keydown", moveSlideOverTab);
     document.getElementById("terminal-bg-toggle")?.addEventListener("click", toggleTerminalBackground);
     document.getElementById("reconnect-btn")?.addEventListener("click", () => {
       sessionManager?.reconnectActiveSession();

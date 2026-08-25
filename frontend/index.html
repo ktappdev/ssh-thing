@@ -15,7 +15,7 @@
     <title>SSH THING</title>
     <link rel="icon" type="image/png" sizes="32x32" href="./assets/favicon-32.png" />
     <link rel="stylesheet" href="./vendor/tailwind.min.css" />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css" />
     <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.11.0/lib/addon-fit.min.js"></script>
@@ -1392,7 +1392,7 @@
     <div id="app-container" class="flex h-screen w-full">
       
       <!-- Sidebar -->
-      <aside id="sidebar" class="w-80 flex-shrink-0 sidebar-surface border-r border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-300">
+      <aside id="sidebar" aria-label="SSH workspace" class="w-80 flex-shrink-0 sidebar-surface border-r border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-300">
         <!-- Sidebar Brand -->
         <div class="sidebar-brand px-4 py-3 flex items-center gap-3 bg-gray-50/50 dark:bg-gray-800/30">
           <div class="brand-lockup">
@@ -1403,39 +1403,39 @@
           </div>
         </div>
         <!-- Sidebar Header / Tabs -->
-        <div class="sidebar-tab-strip flex border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
-          <button id="tab-servers" class="tab-btn flex-1 text-sm font-medium">
+        <div class="sidebar-tab-strip flex border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30" role="tablist" aria-label="Workspace sections">
+          <button id="tab-servers" class="tab-btn flex-1 text-sm font-medium" role="tab" aria-controls="view-servers" aria-selected="true" tabindex="0">
             Servers
           </button>
-          <button id="tab-snippets" class="tab-btn flex-1 text-sm font-medium">
+          <button id="tab-snippets" class="tab-btn flex-1 text-sm font-medium" role="tab" aria-controls="view-snippets" aria-selected="false" tabindex="-1">
             Snippets
           </button>
-          <button id="tab-actions" class="tab-btn flex-1 text-sm font-medium">
+          <button id="tab-actions" class="tab-btn flex-1 text-sm font-medium" role="tab" aria-controls="view-actions" aria-selected="false" tabindex="-1">
             Actions
           </button>
         </div>
 
         <!-- Tab Content: Servers -->
-        <div id="view-servers" class="flex-1 flex flex-col min-h-0">
+        <div id="view-servers" class="flex-1 flex flex-col min-h-0" role="tabpanel" aria-labelledby="tab-servers">
           <div class="sidebar-section-header flex justify-between items-center border-b border-gray-200/60 dark:border-gray-700/50">
-            <span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Hosts</span>
+            <h2 class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Hosts</h2>
             <button id="add-server-btn" class="ghost-btn ghost-btn-primary">
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
               Add
             </button>
           </div>
           <div id="server-filter-wrap" class="sidebar-section-header hidden border-b border-gray-200/60 dark:border-gray-700/50">
-            <input id="server-filter" type="text" placeholder="Filter hosts..." autocorrect="off" autocapitalize="off" spellcheck="false" class="form-input text-sm" />
+            <input id="server-filter" type="text" aria-label="Filter saved hosts" placeholder="Filter hosts..." autocorrect="off" autocapitalize="off" spellcheck="false" class="form-input text-sm" />
           </div>
-          <div class="sidebar-list flex-1 overflow-y-auto space-y-2" id="server-list">
+          <div class="sidebar-list flex-1 overflow-y-auto space-y-2" id="server-list" role="list" aria-label="Saved hosts">
             <!-- Server items will be injected here -->
           </div>
         </div>
 
         <!-- Tab Content: Snippets -->
-        <div id="view-snippets" class="flex-1 flex flex-col min-h-0 hidden">
+        <div id="view-snippets" class="flex-1 flex flex-col min-h-0 hidden" role="tabpanel" aria-labelledby="tab-snippets" aria-hidden="true">
           <div class="sidebar-section-header flex justify-between items-center border-b border-gray-200/60 dark:border-gray-700/50">
-            <span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Snippets</span>
+            <h2 class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Snippets</h2>
             <div class="flex gap-1">
               <button id="export-data-btn" class="ghost-btn text-xs px-2 py-1">Export</button>
               <button id="import-data-btn" class="ghost-btn text-xs px-2 py-1">Import</button>
@@ -1445,32 +1445,32 @@
               </button>
             </div>
           </div>
-          <div class="sidebar-list flex-1 overflow-y-auto space-y-2" id="snippet-list">
+          <div class="sidebar-list flex-1 overflow-y-auto space-y-2" id="snippet-list" role="list" aria-label="Saved command snippets">
             <!-- Snippet items will be injected here -->
           </div>
         </div>
 
-        <div id="view-actions" class="flex-1 flex flex-col min-h-0 hidden">
+        <div id="view-actions" class="flex-1 flex flex-col min-h-0 hidden" role="tabpanel" aria-labelledby="tab-actions" aria-hidden="true">
           <div class="sidebar-section-header flex justify-between items-center border-b border-gray-200/60 dark:border-gray-700/50">
-            <span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Actions</span>
+            <h2 class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Actions</h2>
             <button id="add-action-btn" class="ghost-btn ghost-btn-primary">
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
               Add
             </button>
           </div>
-          <div class="sidebar-list flex-1 overflow-y-auto space-y-2" id="action-list">
+          <div class="sidebar-list flex-1 overflow-y-auto space-y-2" id="action-list" role="list" aria-label="Saved remote actions">
             <!-- Action items will be injected here -->
           </div>
         </div>
       </aside>
 
       <!-- Main Content -->
-      <main id="main-content" class="flex-1 flex flex-col h-full min-w-0 bg-gray-100 dark:bg-gray-900 p-4 transition-all duration-300">
+      <main id="main-content" aria-label="SSH terminal workspace" class="flex-1 flex flex-col h-full min-w-0 bg-gray-100 dark:bg-gray-900 p-4 transition-all duration-300">
         
         <!-- Header -->
         <header id="header" class="flex justify-between items-center mb-4 flex-shrink-0 header-glass rounded-lg px-4 py-3">
           <div class="flex items-center gap-3">
-            <div id="connection-status" class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
+            <div id="connection-status" role="status" aria-live="polite" class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
               Disconnected
             </div>
           </div>
@@ -1488,7 +1488,7 @@
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
                 <span>Focus</span>
             </button>
-            <button id="theme-toggle" class="icon-toggle-btn rounded-md bg-white dark:bg-gray-800 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors shadow-sm border-none" title="Toggle theme">
+            <button id="theme-toggle" aria-label="Switch to dark theme" class="icon-toggle-btn rounded-md bg-white dark:bg-gray-800 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors shadow-sm border-none" title="Toggle theme">
               <svg id="sun-icon" class="w-5 h-5 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
@@ -1497,13 +1497,13 @@
               </svg>
             </button>
             <div id="header-menu-wrap" class="header-menu-wrap">
-              <button id="header-menu-toggle" class="sleek-pill header-action-btn flex items-center gap-1.5 text-gray-700 dark:text-gray-200 rounded text-xs font-semibold uppercase tracking-wide shadow-sm border-none" title="Open header menu" aria-haspopup="true" aria-expanded="false">
+              <button id="header-menu-toggle" class="sleek-pill header-action-btn flex items-center gap-1.5 text-gray-700 dark:text-gray-200 rounded text-xs font-semibold uppercase tracking-wide shadow-sm border-none" title="Open header menu" aria-haspopup="menu" aria-controls="header-menu" aria-expanded="false">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16M4 12h16M4 17h16"/></svg>
                 <span>Menu</span>
               </button>
-              <div id="header-menu" class="header-menu-panel hidden z-40">
+              <div id="header-menu" class="header-menu-panel hidden z-40" role="menu" aria-label="Terminal controls">
                 <div class="header-menu-section">
-                  <button id="about-btn" class="header-menu-item" title="About SSH THING">
+                  <button id="about-btn" class="header-menu-item" role="menuitem" title="About SSH THING">
                     <span class="header-menu-item-main">
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
                       <span class="header-menu-item-copy">
@@ -1512,7 +1512,7 @@
                       </span>
                     </span>
                   </button>
-                  <button id="terminal-search-btn" class="header-menu-item" title="Search terminal">
+                  <button id="terminal-search-btn" class="header-menu-item" role="menuitem" title="Search terminal">
                     <span class="header-menu-item-main">
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m21 21-4.35-4.35M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15z"/></svg>
                       <span class="header-menu-item-copy">
@@ -1521,7 +1521,7 @@
                       </span>
                     </span>
                   </button>
-                  <button id="terminal-settings-btn" class="header-menu-item" title="Terminal settings">
+                  <button id="terminal-settings-btn" class="header-menu-item" role="menuitem" title="Terminal settings">
                     <span class="header-menu-item-main">
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317a1 1 0 0 1 1.35-.936l.906.389a1 1 0 0 0 .832 0l.906-.389a1 1 0 0 1 1.35.936l.068.998a1 1 0 0 0 .564.826l.841.456a1 1 0 0 1 .42 1.36l-.458.84a1 1 0 0 0 0 .832l.458.84a1 1 0 0 1-.42 1.36l-.841.456a1 1 0 0 0-.564.826l-.068.998a1 1 0 0 1-1.35.936l-.906-.389a1 1 0 0 0-.832 0l-.906.389a1 1 0 0 1-1.35-.936l-.068-.998a1 1 0 0 0-.564-.826l-.841-.456a1 1 0 0 1-.42-1.36l.458-.84a1 1 0 0 0 0-.832l-.458-.84a1 1 0 0 1 .42-1.36l.841-.456a1 1 0 0 0 .564-.826l.068-.998z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg>
                       <span class="header-menu-item-copy">
@@ -1532,7 +1532,7 @@
                   </button>
                 </div>
                 <div class="header-menu-section">
-                  <button id="focus-toggle-btn" class="header-menu-item" title="Toggle focus mode (⌘⇧F)">
+                  <button id="focus-toggle-btn" class="header-menu-item" role="menuitemcheckbox" aria-checked="false" title="Toggle focus mode (⌘⇧F)">
                     <span class="header-menu-item-main">
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
                       <span class="header-menu-item-copy">
@@ -1541,7 +1541,7 @@
                       </span>
                     </span>
                   </button>
-                  <button id="terminal-bg-toggle" class="header-menu-item" title="Toggle terminal background">
+                  <button id="terminal-bg-toggle" class="header-menu-item" role="menuitemcheckbox" aria-checked="false" title="Toggle terminal background">
                     <span class="header-menu-item-main">
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h2a1 1 0 011 1v16a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm14 0h2a1 1 0 011 1v16a1 1 0 01-1 1h-2a1 1 0 01-1-1V4a1 1 0 011-1zM7 12h10"/></svg>
                       <span class="header-menu-item-copy">
@@ -1558,31 +1558,31 @@
         </header>
 
         <!-- Terminal Area -->
-        <div id="terminal-wrapper" class="terminal-shell terminal-surface flex-1 rounded-xl overflow-hidden relative flex flex-col min-h-0">
+        <div id="terminal-wrapper" class="terminal-shell terminal-surface flex-1 rounded-xl overflow-hidden relative flex flex-col min-h-0" aria-label="Terminal workspace">
             <!-- Session Tabs -->
-            <div id="session-tabs" class="hidden border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-1.5 flex items-center gap-2 overflow-x-auto">
+            <div id="session-tabs" class="hidden border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-1.5 flex items-center gap-2 overflow-x-auto" role="tablist" aria-label="Terminal sessions">
                 <!-- Session tabs will be injected here -->
             </div>
-            <div id="terminal-search-bar" class="hidden absolute top-2 left-2 z-10 flex items-center gap-2 rounded-lg bg-gray-800/90 px-3 py-2 text-white shadow-md">
-                <input id="terminal-search-input" type="text" placeholder="Search terminal..." class="form-input text-sm" style="background: transparent; border-color: rgba(107, 114, 128, 0.9); color: white;" />
+            <div id="terminal-search-bar" class="hidden absolute top-2 left-2 z-10 flex items-center gap-2 rounded-lg bg-gray-800/90 px-3 py-2 text-white shadow-md" role="search" aria-label="Search active terminal">
+                <input id="terminal-search-input" type="text" aria-label="Search active terminal" placeholder="Search terminal..." class="form-input text-sm" style="background: transparent; border-color: rgba(107, 114, 128, 0.9); color: white;" />
                 <button id="terminal-search-prev" class="ghost-btn text-white">Prev</button>
                 <button id="terminal-search-next" class="ghost-btn text-white">Next</button>
                 <button id="terminal-search-close" class="ghost-btn text-white">Close</button>
             </div>
             
             <div class="absolute top-2 right-2 z-10 flex gap-2">
-                <button id="focus-btn" class="p-1.5 bg-gray-800/80 hover:bg-gray-700 text-white rounded opacity-50 hover:opacity-100 transition-all" title="Focus Mode (⌘⇧F)">
+                <button id="focus-btn" aria-label="Enter focus mode" aria-pressed="false" class="p-1.5 bg-gray-800/80 hover:bg-gray-700 text-white rounded opacity-50 hover:opacity-100 transition-all" title="Focus Mode (⌘⇧F)">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
                 </button>
-                <button id="exit-focus-btn" class="p-2 bg-gray-800/90 hover:bg-gray-700 text-white rounded shadow-md transition-all" title="Exit Focus Mode (⌘⇧F)">
+                <button id="exit-focus-btn" aria-label="Exit focus mode" aria-pressed="true" class="p-2 bg-gray-800/90 hover:bg-gray-700 text-white rounded shadow-md transition-all" title="Exit Focus Mode (⌘⇧F)">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4M4 16v-4m0 0h4m-4 0l5 5m11-5l-5 5m5-5v4m0-4h-4"/></svg>
                 </button>
             </div>
-            <div id="terminal-container" class="w-full h-full"></div>
+            <div id="terminal-container" class="w-full h-full" role="region" aria-label="Active SSH terminal"></div>
         </div>
 
         <!-- Focus mode slide-over panel toggle (visible only in focus mode) -->
-        <button id="focus-panel-btn" class="hidden absolute bottom-4 left-4 z-20 flex items-center gap-2 bg-gray-800/90 hover:bg-gray-700 text-white rounded-lg px-3 py-2 text-sm shadow-lg transition-all opacity-60 hover:opacity-100" title="Show sidebar (⌘⇧S)">
+        <button id="focus-panel-btn" aria-label="Show quick access panel" aria-expanded="false" aria-controls="slide-over-panel" class="hidden absolute bottom-4 left-4 z-20 flex items-center gap-2 bg-gray-800/90 hover:bg-gray-700 text-white rounded-lg px-3 py-2 text-sm shadow-lg transition-all opacity-60 hover:opacity-100" title="Show sidebar (⌘⇧S)">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
             <span>Servers</span>
         </button>
@@ -1591,37 +1591,37 @@
         <div id="slide-over-backdrop" class="hidden fixed inset-0 z-30 bg-black/40 backdrop-blur-sm transition-opacity"></div>
 
         <!-- Slide-over panel -->
-        <aside id="slide-over-panel" class="hidden fixed top-0 left-0 h-full w-80 z-40 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 shadow-2xl flex flex-col transition-transform duration-200 ease-in-out" style="transform: translateX(-100%)">
+        <aside id="slide-over-panel" class="hidden fixed top-0 left-0 h-full w-80 z-40 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 shadow-2xl flex flex-col transition-transform duration-200 ease-in-out" role="dialog" aria-modal="true" aria-labelledby="slide-over-title" style="transform: translateX(-100%)">
             <!-- Panel header -->
             <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-                <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Quick Access</span>
-                <button id="slide-over-close" class="p-1 rounded-md text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                <h2 id="slide-over-title" class="text-sm font-semibold text-gray-900 dark:text-gray-100">Quick Access</h2>
+                <button id="slide-over-close" aria-label="Close quick access panel" class="p-1 rounded-md text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
             </div>
             <!-- Panel tab strip -->
-            <div class="sidebar-tab-strip flex border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 flex-shrink-0">
-                <button id="slide-tab-servers" class="tab-btn flex-1 text-sm font-medium">Servers</button>
-                <button id="slide-tab-snippets" class="tab-btn flex-1 text-sm font-medium">Snippets</button>
-                <button id="slide-tab-actions" class="tab-btn flex-1 text-sm font-medium">Actions</button>
+            <div class="sidebar-tab-strip flex border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 flex-shrink-0" role="tablist" aria-label="Quick access sections">
+                <button id="slide-tab-servers" class="tab-btn flex-1 text-sm font-medium" role="tab" aria-controls="slide-view-servers" aria-selected="true" tabindex="0">Servers</button>
+                <button id="slide-tab-snippets" class="tab-btn flex-1 text-sm font-medium" role="tab" aria-controls="slide-view-snippets" aria-selected="false" tabindex="-1">Snippets</button>
+                <button id="slide-tab-actions" class="tab-btn flex-1 text-sm font-medium" role="tab" aria-controls="slide-view-actions" aria-selected="false" tabindex="-1">Actions</button>
             </div>
             <!-- Panel content areas (cloned from sidebar) -->
-            <div id="slide-view-servers" class="flex-1 flex flex-col min-h-0 overflow-y-auto">
-                <div id="slide-server-list" class="sidebar-list space-y-2"></div>
+            <div id="slide-view-servers" class="flex-1 flex flex-col min-h-0 overflow-y-auto" role="tabpanel" aria-labelledby="slide-tab-servers">
+                <div id="slide-server-list" class="sidebar-list space-y-2" role="list" aria-label="Saved hosts"></div>
             </div>
-            <div id="slide-view-snippets" class="flex-1 flex flex-col min-h-0 overflow-y-auto hidden">
-                <div id="slide-snippet-list" class="sidebar-list space-y-2"></div>
+            <div id="slide-view-snippets" class="flex-1 flex flex-col min-h-0 overflow-y-auto hidden" role="tabpanel" aria-labelledby="slide-tab-snippets" aria-hidden="true">
+                <div id="slide-snippet-list" class="sidebar-list space-y-2" role="list" aria-label="Saved command snippets"></div>
             </div>
-            <div id="slide-view-actions" class="flex-1 flex flex-col min-h-0 overflow-y-auto hidden">
-                <div id="slide-action-list" class="sidebar-list space-y-2"></div>
+            <div id="slide-view-actions" class="flex-1 flex flex-col min-h-0 overflow-y-auto hidden" role="tabpanel" aria-labelledby="slide-tab-actions" aria-hidden="true">
+                <div id="slide-action-list" class="sidebar-list space-y-2" role="list" aria-label="Saved remote actions"></div>
             </div>
         </aside>
         
         <!-- Status Bar -->
-        <div id="status-bar" class="mt-3 flex justify-between items-center px-4 py-2.5 bg-white dark:bg-gray-800 rounded-xl text-sm border border-gray-200 dark:border-gray-700 shadow-sm flex-shrink-0">
+        <div id="status-bar" role="status" aria-live="polite" aria-label="Connection status" class="mt-3 flex justify-between items-center px-4 py-2.5 bg-white dark:bg-gray-800 rounded-xl text-sm border border-gray-200 dark:border-gray-700 shadow-sm flex-shrink-0">
           <div class="flex items-center gap-3">
             <div class="flex items-center gap-2">
-              <div class="w-2 h-2 rounded-full bg-gray-400" id="status-indicator"></div>
+              <div class="w-2 h-2 rounded-full bg-gray-400" id="status-indicator" aria-hidden="true"></div>
               <div id="status-bar-host" class="text-gray-600 dark:text-gray-400 font-mono text-sm">Not connected</div>
             </div>
             <div id="session-count" class="text-xs text-gray-500 dark:text-gray-400">Sessions: 0</div>
@@ -1630,18 +1630,18 @@
         </div>
 
         <!-- Connection Log -->
-        <div id="connection-log-container" class="mt-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 shadow-sm flex-shrink-0 max-h-32 flex flex-col">
+        <div id="connection-log-container" role="region" aria-labelledby="connection-log-title" class="mt-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 shadow-sm flex-shrink-0 max-h-32 flex flex-col">
           <div class="flex items-center justify-between mb-2.5 flex-shrink-0">
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-500">Connection Log</h3>
+            <h2 id="connection-log-title" class="text-xs font-semibold uppercase tracking-wide text-gray-500">Connection Log</h2>
             <button id="clear-log-btn" class="text-xs text-blue-500 hover:text-blue-600">Clear</button>
           </div>
-          <ul id="connection-log-list" class="overflow-y-auto flex-1 text-xs font-mono"></ul>
+          <ul id="connection-log-list" class="overflow-y-auto flex-1 text-xs font-mono" aria-live="polite" aria-relevant="additions text"></ul>
         </div>
 
       </main>
     </div>
 
-    <div id="alert-modal" class="hidden fixed inset-0 modal-backdrop z-50">
+    <div id="alert-modal" class="hidden fixed inset-0 modal-backdrop z-50" role="alertdialog" aria-modal="true" aria-labelledby="alert-title" aria-describedby="alert-message">
       <div class="modal-content modal-panel dialog-card w-96 max-w-sm mx-4">
         <div class="flex items-center gap-3">
           <div id="alert-icon" class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center">
@@ -1660,7 +1660,7 @@
       </div>
     </div>
 
-    <div id="delete-confirm-modal" class="hidden fixed inset-0 modal-backdrop z-50">
+    <div id="delete-confirm-modal" class="hidden fixed inset-0 modal-backdrop z-50" role="alertdialog" aria-modal="true" aria-labelledby="delete-confirm-title" aria-describedby="delete-confirm-message">
       <div class="modal-content modal-panel dialog-card w-96 max-w-sm mx-4">
         <div class="flex items-center gap-3">
           <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-red-50 text-red-600">
@@ -1680,7 +1680,7 @@
       </div>
     </div>
 
-    <div id="disconnect-confirm-modal" class="hidden fixed inset-0 modal-backdrop z-50">
+    <div id="disconnect-confirm-modal" class="hidden fixed inset-0 modal-backdrop z-50" role="alertdialog" aria-modal="true" aria-labelledby="disconnect-confirm-title" aria-describedby="disconnect-confirm-message">
       <div class="modal-content modal-panel dialog-card w-96 max-w-sm mx-4">
         <div class="flex items-center gap-3">
           <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-rose-50 text-rose-600">
@@ -1689,7 +1689,7 @@
             </svg>
           </div>
           <div>
-            <h3 class="text-lg font-bold">Disconnect?</h3>
+            <h3 id="disconnect-confirm-title" class="text-lg font-bold">Disconnect?</h3>
             <p id="disconnect-confirm-message" class="text-sm text-gray-600 dark:text-gray-400">Are you sure you want to disconnect?</p>
           </div>
         </div>
@@ -1700,12 +1700,12 @@
       </div>
     </div>
 
-    <div id="host-key-modal" class="hidden fixed inset-0 modal-backdrop z-50">
+    <div id="host-key-modal" class="hidden fixed inset-0 modal-backdrop z-50" role="alertdialog" aria-modal="true" aria-labelledby="host-key-title" aria-describedby="host-key-description">
       <div class="modal-content modal-panel dialog-card w-[28rem] max-w-full mx-4">
         <div class="flex items-start justify-between">
           <div>
-            <h3 class="text-xl font-bold">Trust this host key?</h3>
-            <p class="text-sm text-gray-600 dark:text-gray-400">Verify the fingerprint before connecting.</p>
+            <h3 id="host-key-title" class="text-xl font-bold">Trust this host key?</h3>
+            <p id="host-key-description" class="text-sm text-gray-600 dark:text-gray-400">Verify the fingerprint before connecting.</p>
           </div>
         </div>
         <div class="space-y-4 text-sm mt-4">
@@ -1731,7 +1731,7 @@
       </div>
     </div>
 
-    <div id="server-modal" class="hidden fixed inset-0 modal-backdrop" style="z-index: 9999;">
+    <div id="server-modal" class="hidden fixed inset-0 modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-title" style="z-index: 9999;">
       <div class="modal-content modal-panel w-[30rem] max-w-full mx-4 overflow-hidden">
         <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
           <h3 id="modal-title" class="text-lg font-semibold text-gray-800 dark:text-gray-100">Add Server</h3>
@@ -1743,11 +1743,11 @@
             <div class="modal-section-title">Server Info</div>
             <div class="space-y-3">
               <div>
-                <label class="form-label">Nickname</label>
+                <label class="form-label" for="server-nickname">Nickname</label>
                 <input type="text" id="server-nickname" autocorrect="off" autocapitalize="off" spellcheck="false" class="form-input" placeholder="My Server" />
               </div>
               <div>
-                <label class="form-label">Host <span class="text-red-400">*</span></label>
+                <label class="form-label" for="server-host">Host <span class="text-red-400">*</span></label>
                 <input type="text" id="server-host" required autocorrect="off" autocapitalize="off" spellcheck="false" class="form-input" placeholder="hostname or IP address" />
               </div>
             </div>
@@ -1757,16 +1757,16 @@
             <div class="modal-section-title">Connection</div>
             <div class="grid grid-cols-2 gap-3">
               <div>
-                <label class="form-label">Port</label>
+                <label class="form-label" for="server-port">Port</label>
                 <input type="number" id="server-port" value="22" required class="form-input" />
               </div>
               <div>
-                <label class="form-label">Username <span class="text-red-400">*</span></label>
+                <label class="form-label" for="server-user">Username <span class="text-red-400">*</span></label>
                 <input type="text" id="server-user" required autocorrect="off" autocapitalize="off" spellcheck="false" class="form-input" placeholder="root" />
               </div>
             </div>
             <div class="mt-3">
-              <label class="form-label">Connect Timeout (seconds)</label>
+              <label class="form-label" for="server-timeout">Connect Timeout (seconds)</label>
               <input type="number" id="server-timeout" value="30" min="5" max="300" required class="form-input" />
             </div>
           </div>
@@ -1775,19 +1775,19 @@
             <div class="modal-section-title">Authentication</div>
             <div class="space-y-3">
               <div>
-                <label class="form-label">Auth Type</label>
+                <label class="form-label" for="auth-type">Auth Type</label>
                 <select id="auth-type" class="form-select">
                   <option value="password">Password</option>
                   <option value="key">Private Key</option>
                 </select>
               </div>
               <div id="password-field">
-                <label class="form-label">Password</label>
+                <label class="form-label" for="server-password">Password</label>
                 <input type="password" id="server-password" autocorrect="off" autocapitalize="off" spellcheck="false" class="form-input" placeholder="Enter password" />
               </div>
               <div id="key-field" class="hidden">
-                <label class="form-label">Private Key</label>
-                <input id="server-key-file" type="file" accept=".pem,.key,.rsa,.ppk,.txt" class="hidden" />
+                <label class="form-label" for="server-key">Private Key</label>
+                <input id="server-key-file" type="file" aria-label="Choose a private key file" accept=".pem,.key,.rsa,.ppk,.txt" class="hidden" />
                 <button type="button" id="server-key-browse-btn" class="ghost-btn ghost-btn-primary mb-2" style="background: rgba(114, 135, 253, 0.1);">
                   Browse Key File
                 </button>
@@ -1804,7 +1804,7 @@
       </div>
     </div>
 
-    <div id="snippet-modal" class="hidden fixed inset-0 modal-backdrop">
+    <div id="snippet-modal" class="hidden fixed inset-0 modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="snippet-modal-title">
       <div class="modal-content modal-panel w-[30rem] max-w-full mx-4 overflow-hidden">
         <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
           <h3 id="snippet-modal-title" class="text-lg font-semibold text-gray-800 dark:text-gray-100">Add Snippet</h3>
@@ -1816,15 +1816,15 @@
             <div class="modal-section-title">Snippet Details</div>
             <div class="space-y-3">
               <div>
-                <label class="form-label">Name <span class="text-red-400">*</span></label>
+                <label class="form-label" for="snippet-name">Name <span class="text-red-400">*</span></label>
                 <input type="text" id="snippet-name" required autocorrect="off" autocapitalize="off" spellcheck="false" class="form-input" placeholder="My Command" />
               </div>
               <div>
-                <label class="form-label">Command <span class="text-red-400">*</span></label>
+                <label class="form-label" for="snippet-command">Command <span class="text-red-400">*</span></label>
                 <textarea id="snippet-command" rows="3" required autocorrect="off" autocapitalize="off" spellcheck="false" class="form-input font-mono text-xs" placeholder="ls -la"></textarea>
               </div>
               <div>
-                <label class="form-label">Description</label>
+                <label class="form-label" for="snippet-description">Description</label>
                 <input type="text" id="snippet-description" autocorrect="off" autocapitalize="off" spellcheck="false" class="form-input" placeholder="What does this command do?" />
               </div>
             </div>
@@ -1838,7 +1838,7 @@
       </div>
     </div>
 
-    <div id="action-modal" class="hidden fixed inset-0 modal-backdrop z-50">
+    <div id="action-modal" class="hidden fixed inset-0 modal-backdrop z-50" role="dialog" aria-modal="true" aria-labelledby="action-modal-title">
       <div class="modal-content modal-panel w-[30rem] max-w-full mx-4 overflow-hidden">
         <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
           <h3 id="action-modal-title" class="text-lg font-semibold text-gray-800 dark:text-gray-100">Add Action</h3>
@@ -1850,29 +1850,29 @@
             <div class="modal-section-title">Action Details</div>
             <div class="space-y-3">
               <div>
-                <label class="form-label">Name <span class="text-red-400">*</span></label>
+                <label class="form-label" for="action-name">Name <span class="text-red-400">*</span></label>
                 <input type="text" id="action-name" required autocorrect="off" autocapitalize="off" spellcheck="false" class="form-input" placeholder="Restart API" />
               </div>
               <div>
-                <label class="form-label">Description</label>
+                <label class="form-label" for="action-description">Description</label>
                 <input type="text" id="action-description" autocorrect="off" autocapitalize="off" spellcheck="false" class="form-input" placeholder="What this action does" />
               </div>
-              <div class="text-xs text-gray-500 dark:text-gray-400">
+                <div id="action-help" class="text-xs text-gray-500 dark:text-gray-400">
                 Actions open a short-lived SSH session, run the command, capture output, then disconnect.
               </div>
               <div class="grid grid-cols-2 gap-3">
                 <div>
-                  <label class="form-label">Server <span class="text-red-400">*</span></label>
-                  <select id="action-server" required class="form-select"></select>
+                  <label class="form-label" for="action-server">Server <span class="text-red-400">*</span></label>
+                  <select id="action-server" required aria-describedby="action-help" class="form-select"></select>
                 </div>
                 <div>
-                  <label class="form-label">Timeout (seconds)</label>
+                  <label class="form-label" for="action-timeout">Timeout (seconds)</label>
                   <input type="number" id="action-timeout" min="5" max="600" value="60" class="form-input" />
                 </div>
               </div>
               <div>
-                <label class="form-label">Command <span class="text-red-400">*</span></label>
-                <textarea id="action-command" rows="5" required autocorrect="off" autocapitalize="off" spellcheck="false" class="form-input font-mono text-xs" placeholder="sudo systemctl restart api && systemctl status api --no-pager"></textarea>
+                <label class="form-label" for="action-command">Command <span class="text-red-400">*</span></label>
+                <textarea id="action-command" rows="5" required autocorrect="off" autocapitalize="off" spellcheck="false" class="form-input font-mono text-xs" placeholder="sudo systemctl restart api &amp;&amp; systemctl status api --no-pager"></textarea>
               </div>
             </div>
           </div>
@@ -1885,7 +1885,7 @@
       </div>
     </div>
 
-    <div id="action-history-modal" class="hidden fixed inset-0 modal-backdrop z-50">
+    <div id="action-history-modal" class="hidden fixed inset-0 modal-backdrop z-50" role="dialog" aria-modal="true" aria-labelledby="action-history-title" aria-describedby="action-history-summary">
       <div class="modal-content modal-panel w-[40rem] max-w-full mx-4 overflow-hidden">
         <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3">
           <div>
@@ -1895,25 +1895,25 @@
           </div>
           <button type="button" id="action-history-close" class="ghost-btn">Close</button>
         </div>
-        <div id="action-history-list" class="modal-section space-y-3 max-h-[28rem] overflow-y-auto">
+        <div id="action-history-list" class="modal-section space-y-3 max-h-[28rem] overflow-y-auto" role="log" aria-live="polite">
           <!-- Action history entries will be injected here -->
         </div>
       </div>
     </div>
 
-    <div id="terminal-settings-modal" class="hidden fixed inset-0 modal-backdrop z-50">
+    <div id="terminal-settings-modal" class="hidden fixed inset-0 modal-backdrop z-50" role="dialog" aria-modal="true" aria-labelledby="terminal-settings-title">
       <div class="modal-content modal-panel w-[28rem] max-w-full mx-4 overflow-hidden">
         <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">Terminal Settings</h3>
+          <h3 id="terminal-settings-title" class="text-lg font-semibold text-gray-800 dark:text-gray-100">Terminal Settings</h3>
         </div>
         <form id="terminal-settings-form">
           <div class="modal-section space-y-3">
             <div>
-              <label class="form-label">Font Size</label>
+              <label class="form-label" for="terminal-font-size">Font Size</label>
               <input type="number" min="10" max="24" id="terminal-font-size" class="form-input" />
             </div>
             <div>
-              <label class="form-label">Scrollback Lines</label>
+              <label class="form-label" for="terminal-scrollback">Scrollback Lines</label>
               <select id="terminal-scrollback" class="form-select">
                 <option value="5000">5000</option>
                 <option value="10000">10000</option>
@@ -1929,7 +1929,7 @@
       </div>
     </div>
 
-    <div id="close-app-modal" class="hidden fixed inset-0 modal-backdrop z-50">
+    <div id="close-app-modal" class="hidden fixed inset-0 modal-backdrop z-50" role="alertdialog" aria-modal="true" aria-labelledby="close-app-title" aria-describedby="close-app-message">
       <div class="modal-content modal-panel dialog-card w-96 max-w-sm mx-4">
         <div class="flex items-center gap-3">
           <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-amber-50 text-amber-600">
@@ -1938,7 +1938,7 @@
             </svg>
           </div>
           <div>
-            <h3 class="text-lg font-bold">Close with active sessions?</h3>
+            <h3 id="close-app-title" class="text-lg font-bold">Close with active sessions?</h3>
             <p id="close-app-message" class="text-sm text-gray-600 dark:text-gray-400">Disconnecting now will close all active terminals.</p>
           </div>
         </div>
@@ -1949,17 +1949,20 @@
       </div>
     </div>
 
-    <div id="about-modal" class="hidden fixed inset-0 modal-backdrop z-50">
+    <div id="about-modal" class="hidden fixed inset-0 modal-backdrop z-50" role="dialog" aria-modal="true" aria-labelledby="about-title" aria-describedby="about-description">
       <div class="modal-content modal-panel w-[30rem] max-w-full mx-4 overflow-hidden">
         <div class="modal-section">
           <div class="flex items-start gap-4">
             <img src="./assets/logo-square.png" alt="SSH THING logo" class="about-logo" />
             <div class="min-w-0 flex-1">
               <div class="text-[10px] uppercase tracking-wide font-semibold text-gray-500 dark:text-gray-400">About</div>
-              <h3 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mt-1">SSH THING</h3>
-              <p class="text-sm text-gray-600 dark:text-gray-400 mt-2">A desktop SSH client built with Tauri for fast terminal access and simple host management.</p>
+              <h3 id="about-title" class="text-xl font-semibold text-gray-800 dark:text-gray-100 mt-1">SSH THING</h3>
+              <p id="about-description" class="text-sm text-gray-600 dark:text-gray-400 mt-2">A desktop SSH client built with Tauri for fast terminal access and simple host management.</p>
               <div class="mt-3 text-xs text-gray-500 dark:text-gray-400">
                 <span id="about-version">Version 0.1.0</span>
+              </div>
+              <div class="mt-2">
+                <span class="inline-flex rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800 dark:bg-blue-900/40 dark:text-blue-200" title="Uses labeled controls, semantic regions, state attributes, and accessible dialogs.">Computer Use ready</span>
               </div>
             </div>
           </div>
@@ -1977,32 +1980,6 @@
       </div>
     </div>
 
-    <div id="toast-stack" class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+    <div id="toast-stack" class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none" role="status" aria-live="polite" aria-atomic="false"></div>
   </body>
-</html>
- </body>
-</html>
- class="ghost-btn">Close</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="toast-stack" class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
-  </body>
-</html>
- </body>
-</html>
-/body>
-</html>
-</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="toast-stack" class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
-  </body>
-</html>
- </body>
-</html>
-/body>
 </html>

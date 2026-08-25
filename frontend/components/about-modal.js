@@ -45,7 +45,10 @@ export async function initAboutModal() {
     return;
   }
 
-  const openModal = () => modal.classList.remove("hidden");
+  const openModal = () => {
+    modal.classList.remove("hidden");
+    requestAnimationFrame(() => closeButton.focus());
+  };
   const closeModal = () => modal.classList.add("hidden");
 
   versionLabel.textContent = `Version ${await getAppVersion()}`;

@@ -10,6 +10,9 @@ export function initHeaderMenu() {
   const setOpen = (open) => {
     menu.classList.toggle("hidden", !open);
     toggleBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) {
+      requestAnimationFrame(() => menu.querySelector('[role="menuitem"]')?.focus());
+    }
   };
 
   const isOpen = () => !menu.classList.contains("hidden");

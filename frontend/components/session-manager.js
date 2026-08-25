@@ -305,8 +305,14 @@ export function createSessionManager(options) {
           ? "bg-blue-500 text-white"
           : "text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
       }`;
+      tab.id = `session-tab-${session.id}`;
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-controls", "terminal-container");
+      tab.setAttribute("aria-selected", String(isActive));
+      tab.tabIndex = isActive ? 0 : -1;
+      tab.setAttribute("aria-label", `${getSessionTabLabel(session)}, ${state}`);
       tab.innerHTML = `
-        <div class="${dotClass}" style="width:0.375rem;height:0.375rem;box-shadow:none;"></div>
+        <div class="${dotClass}" aria-hidden="true" style="width:0.375rem;height:0.375rem;box-shadow:none;"></div>
         <span class="truncate max-w-36">${getSessionTabLabel(session)}</span>
       `;
       tab.addEventListener("click", () => setActiveSession(session.id));
