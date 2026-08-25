@@ -16,6 +16,9 @@ dist-ssr
 target/
 Cargo.lock
 
+# Local release artifacts
+release-builds/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

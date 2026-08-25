@@ -65,7 +65,14 @@ Before releasing:
 
 3. Build the intended distribution target. For macOS, use
    `npm run build:macos` or `npm run build:release`; the latter builds Intel
-   and Apple Silicon DMGs and copies them into `release-builds/`.
+   and Apple Silicon DMGs and copies them into `release-builds/`. Verify that
+   the directory contains both `SSH.THING_<version>_x64.dmg` and
+   `SSH.THING_<version>_aarch64.dmg` before continuing. Tauri may place the
+   generated DMG under either `target/<triple>/release/bundle/dmg/` or
+   `target/<triple>/release/bundle/macos/`; `build-release.sh` checks both and
+   fails if a target does not produce exactly one DMG. If a retry leaves
+   `rw.*.dmg` images mounted under `/Volumes`, eject those generated images
+   before retrying the build.
 4. Run `npm run release`, review the proposed version, and press Enter. The
    script creates `Release v<version>` and `v<version>`, then pushes both.
 5. Confirm the GitHub Actions release workflow completes. A pushed `v*` tag

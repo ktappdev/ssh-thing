@@ -25,25 +25,25 @@ for target in "${TARGETS[@]}"; do
     if cargo tauri build --target "$target"; then
         echo "✓ Successfully built for $target"
         
-        BUNDLE_DIR="$BUNDLE_ROOT/macos"
-        if [ ! -d "$BUNDLE_DIR" ]; then
-            BUNDLE_DIR="$BUNDLE_ROOT/dmg"
-        fi
         if [ "$target" = "aarch64-apple-darwin" ]; then
             ASSET_ARCH="aarch64"
         else
             ASSET_ARCH="x64"
         fi
 
-        if [ -d "$BUNDLE_DIR" ]; then
-            for dmg in "$BUNDLE_DIR"/*.dmg; do
-                if [ -f "$dmg" ]; then
-                    destination="$RELEASE_DIR/SSH.THING_${VERSION}_${ASSET_ARCH}.dmg"
-                    cp "$dmg" "$destination"
-                    echo "  → Copied DMG: $(basename "$destination")"
-                fi
-            done
+        shopt -s nullglob
+        dmg_files=("$BUNDLE_ROOT/dmg"/*.dmg "$BUNDLE_ROOT/macos"/*.dmg)
+        shopt -u nullglob
+
+        if [ "${#dmg_files[@]}" -ne 1 ]; then
+            echo "✗ Expected exactly one DMG for $target, found ${#dmg_files[@]}"
+            printf '  Checked: %s\n' "$BUNDLE_ROOT/dmg" "$BUNDLE_ROOT/macos"
+            exit 1
         fi
+
+        destination="$RELEASE_DIR/SSH.THING_${VERSION}_${ASSET_ARCH}.dmg"
+        cp "${dmg_files[0]}" "$destination"
+        echo "  → Copied DMG: $(basename "$destination")"
     else
         echo "✗ Failed to build for $target"
         exit 1
