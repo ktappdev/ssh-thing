@@ -142,31 +142,29 @@ export function initActionManager({ invoke, listen, getServers, showToast, showA
       const status = runningState?.status || action.last_execution_status || "idle";
       const buttonLabel = runningState ? "Running" : "Run";
       const item = document.createElement("div");
-      item.className = `action-item bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700/50 rounded-xl px-3.5 py-3 shadow-sm group relative ${runningState ? "status-running" : ""}`;
+      item.className = `action-item workspace-card bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700/50 rounded-xl px-3.5 py-3 shadow-sm group relative ${runningState ? "status-running" : ""}`;
       item.dataset.id = action.id;
       item.setAttribute("role", "listitem");
       item.innerHTML = `
-        <div class="flex items-start gap-3">
+        <div class="action-card-main card-main">
           <div class="action-accent ${runningState ? "action-accent-live" : ""}"></div>
-          <div class="min-w-0 flex-1">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0 flex-1">
-                <div class="server-card-name truncate">${escapeHtml(action.name)}</div>
-                <div class="server-card-subtitle truncate">${escapeHtml(serverLabel)}</div>
-              </div>
+          <div class="action-card-copy">
+            <div class="action-card-heading">
+              <div class="server-card-name truncate" title="${escapeHtml(action.name)}">${escapeHtml(action.name)}</div>
               <span class="action-status-pill ${getStatusTone(status)}" aria-label="Action status: ${escapeHtml(formatStatusLabel(status))}">${escapeHtml(formatStatusLabel(status))}</span>
             </div>
-            <div class="action-command-preview">${escapeHtml(action.command)}</div>
+            <div class="server-card-subtitle truncate" title="${escapeHtml(serverLabel)}">${escapeHtml(serverLabel)}</div>
+            <div class="action-command-preview" title="${escapeHtml(action.command)}">${escapeHtml(action.command)}</div>
             <div class="action-meta-row">
-              <span>${escapeHtml(action.description || "One-shot remote command")}</span>
+              <span title="${escapeHtml(action.description || "One-shot remote command")}">${escapeHtml(action.description || "One-shot remote command")}</span>
               <span>${escapeHtml(formatRelativeStatus(action))}</span>
             </div>
             ${!server ? '<div class="action-missing-note">Saved server no longer exists. Edit this action to reassign it.</div>' : ""}
             ${runningState?.message ? `<div class="action-live-note">${escapeHtml(runningState.message)}</div>` : ""}
           </div>
         </div>
-        <div class="action-toolbar mt-3 flex items-center justify-between gap-2">
-          <div class="action-secondary-actions flex gap-1 flex-shrink-0">
+        <div class="card-toolbar action-toolbar">
+          <div class="action-secondary-actions card-actions" role="group" aria-label="Manage ${escapeHtml(action.name)}">
             <button class="server-action-btn action-history-btn" data-id="${escapeHtml(action.id)}" title="History" aria-label="View history for ${escapeHtml(action.name)}">
               <svg class="server-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3M3.05 11A9 9 0 1 1 6 17.3L3 20m0-5h5" /></svg>
             </button>
@@ -177,7 +175,7 @@ export function initActionManager({ invoke, listen, getServers, showToast, showA
               <svg class="server-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0 1 16.138 21H7.862a2 2 0 0 1-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v3M4 7h16" /></svg>
             </button>
           </div>
-          <button class="ghost-btn ${needsRepair ? "action-repair-btn" : "ghost-btn-primary"} action-run-btn" data-id="${escapeHtml(action.id)}" ${runningState ? "disabled" : ""} title="${needsRepair ? "Repair action server" : canRun ? "Run action" : "Action is already running"}" aria-label="${needsRepair ? "Repair server assignment for" : buttonLabel} ${escapeHtml(action.name)}">
+          <button class="ghost-btn card-primary-action ${needsRepair ? "action-repair-btn" : "ghost-btn-primary"} action-run-btn" data-id="${escapeHtml(action.id)}" ${runningState ? "disabled" : ""} title="${needsRepair ? "Repair action server" : canRun ? "Run action" : "Action is already running"}" aria-label="${needsRepair ? "Repair server assignment for" : buttonLabel} ${escapeHtml(action.name)}">
             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0 0 10 9.87v4.263a1 1 0 0 0 1.555.832l3.197-2.132a1 1 0 0 0 0-1.664z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" /></svg>
             ${needsRepair ? "Repair" : buttonLabel}
           </button>

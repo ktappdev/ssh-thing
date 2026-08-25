@@ -57,7 +57,7 @@ function createServerCard({ server, summary, formatLastConnected, onPrimaryActio
     statusClass = "status-error";
   }
 
-  div.className = `server-item bg-white dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700/80 rounded-xl px-3.5 py-3 shadow-sm group flex items-center gap-3 cursor-pointer ${statusClass}`;
+  div.className = `server-item workspace-card bg-white dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700/80 rounded-xl px-3.5 py-3 shadow-sm group cursor-pointer ${statusClass}`;
 
   const displayName = server.nickname && server.nickname.trim().length > 0 ? server.nickname : `${server.user}@${server.host}`;
   const safeDisplayName = escapeHtml(displayName);
@@ -67,7 +67,10 @@ function createServerCard({ server, summary, formatLastConnected, onPrimaryActio
     : `Port ${server.port}`;
   const meta = buildMeta(server, summary, formatLastConnected);
   const safeSubtitle = escapeHtml(subtitle);
-  const safeMeta = meta.map(escapeHtml).join(" • ");
+  const safeMeta = meta
+    .map((item) => `<span class="server-card-meta-item">${escapeHtml(item)}</span>`)
+    .join("");
+  const safeMetaTitle = escapeHtml(meta.join(" • "));
 
   const buttonLabel = hasLiveSessions ? "New Session" : "Connect";
   const buttonClass = hasLiveSessions ? "ghost-btn-primary" : "ghost-btn-success";
@@ -77,29 +80,33 @@ function createServerCard({ server, summary, formatLastConnected, onPrimaryActio
 
   div.setAttribute("role", "listitem");
   div.innerHTML = `
-    <div class="flex items-center gap-2.5 min-w-0 flex-1">
-      ${statusDot(summary)}
-      <div class="min-w-0 flex-1">
-        <div class="server-card-name truncate">${safeDisplayName}</div>
-        <div class="server-card-subtitle truncate">${safeSubtitle}</div>
-        <div class="server-card-meta truncate">${safeMeta}</div>
+    <div class="server-card-main card-main">
+      <div class="server-card-status">${statusDot(summary)}</div>
+      <div class="server-card-copy">
+        <div class="server-card-heading">
+          <div class="server-card-name truncate" title="${safeDisplayName}">${safeDisplayName}</div>
+        </div>
+        <div class="server-card-subtitle truncate" title="${safeSubtitle}">${safeSubtitle}</div>
+        <div class="server-card-meta" title="${safeMetaTitle}" aria-label="${safeMetaTitle}">${safeMeta}</div>
       </div>
     </div>
-    <div class="server-actions flex gap-1 flex-shrink-0">
-      <button class="server-action-btn duplicate-btn" data-id="${safeServerId}" title="Duplicate" aria-label="Duplicate ${safeDisplayName}">
+    <div class="card-toolbar server-card-toolbar">
+      <div class="server-actions card-actions" role="group" aria-label="Manage ${safeDisplayName}">
+        <button class="server-action-btn duplicate-btn" data-id="${safeServerId}" title="Duplicate" aria-label="Duplicate ${safeDisplayName}">
         <svg class="server-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2M10 20h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"></path></svg>
       </button>
-      <button class="server-action-btn edit-btn" data-id="${safeServerId}" title="Edit" aria-label="Edit ${safeDisplayName}">
+        <button class="server-action-btn edit-btn" data-id="${safeServerId}" title="Edit" aria-label="Edit ${safeDisplayName}">
         <svg class="server-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
       </button>
-      <button class="server-action-btn delete delete-btn" data-id="${safeServerId}" title="Delete" aria-label="Delete ${safeDisplayName}">
+        <button class="server-action-btn delete delete-btn" data-id="${safeServerId}" title="Delete" aria-label="Delete ${safeDisplayName}">
         <svg class="server-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
       </button>
+      </div>
+      <button class="ghost-btn card-primary-action connect-btn ${buttonClass}" data-id="${safeServerId}" aria-label="${buttonLabel} to ${safeDisplayName}">
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">${buttonIcon}</svg>
+        ${buttonLabel}
+      </button>
     </div>
-    <button class="ghost-btn connect-btn ${buttonClass} flex-shrink-0" data-id="${safeServerId}" aria-label="${buttonLabel} to ${safeDisplayName}">
-      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">${buttonIcon}</svg>
-      ${buttonLabel}
-    </button>
   `;
 
   div.addEventListener("click", (event) => {

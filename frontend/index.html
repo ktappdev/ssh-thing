@@ -122,6 +122,77 @@
         border-color: var(--surface-2);
       }
 
+      .workspace-card {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.75rem;
+        min-height: 0;
+      }
+
+      .card-main {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        min-width: 0;
+      }
+
+      .server-card-copy,
+      .snippet-card-copy,
+      .action-card-copy {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+
+      .server-card-heading,
+      .action-card-heading {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.5rem;
+        min-width: 0;
+      }
+
+      .server-card-heading .server-card-name,
+      .action-card-heading .server-card-name {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+
+      .server-card-status {
+        flex: 0 0 auto;
+        padding-top: 0.375rem;
+      }
+
+      .card-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        min-width: 0;
+      }
+
+      .card-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        min-width: 0;
+        padding: 0.2rem;
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        border-radius: var(--radius-md);
+        background: rgba(148, 163, 184, 0.07);
+      }
+
+      .dark .card-actions {
+        border-color: rgba(148, 163, 184, 0.14);
+        background: rgba(15, 23, 42, 0.18);
+      }
+
+      .card-primary-action {
+        flex: 0 0 auto;
+        min-width: 5.5rem;
+        justify-content: center;
+      }
+
       .server-item.status-connected {
         background: linear-gradient(135deg, rgba(64, 160, 43, 0.06), rgba(64, 160, 43, 0.02)) !important;
         border-color: rgba(64, 160, 43, 0.2) !important;
@@ -734,17 +805,70 @@
         margin-top: 0.125rem;
         letter-spacing: 0.015em;
         line-height: 1.3;
+        font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       }
 
       .server-card-meta {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
+        flex-wrap: wrap;
+        gap: 0.35rem 0.5rem;
         font-size: 0.6875rem;
         color: var(--text-secondary);
         letter-spacing: 0.01em;
         line-height: 1.3;
         margin-top: 0.125rem;
+      }
+
+      .server-card-meta-item {
+        display: inline-flex;
+        align-items: center;
+        max-width: 100%;
+        padding: 0.2rem 0.45rem;
+        border: 1px solid rgba(148, 163, 184, 0.14);
+        border-radius: var(--radius-sm);
+        background: rgba(148, 163, 184, 0.07);
+        white-space: nowrap;
+      }
+
+      .dark .server-card-meta-item {
+        border-color: rgba(148, 163, 184, 0.12);
+        background: rgba(15, 23, 42, 0.18);
+      }
+
+      .snippet-card-main {
+        align-items: center;
+      }
+
+      .snippet-mark {
+        width: 0.55rem;
+        height: 0.55rem;
+        flex: 0 0 auto;
+        border-radius: 999px;
+        background: #7287fd;
+        box-shadow: 0 0 0 3px rgba(114, 135, 253, 0.12);
+      }
+
+      .dark .snippet-mark {
+        background: #b4befe;
+        box-shadow: 0 0 0 3px rgba(180, 190, 254, 0.12);
+      }
+
+      .snippet-command-preview {
+        margin-top: 0.4rem;
+        color: #7287fd;
+        font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.6875rem;
+        line-height: 1.4;
+      }
+
+      .dark .snippet-command-preview {
+        color: #b4befe;
+      }
+
+      .snippet-command-more {
+        color: var(--text-secondary);
+        font-family: "Space Grotesk", "Segoe UI", sans-serif;
       }
 
       .server-card-badge {
@@ -769,10 +893,17 @@
       .dark .action-item .server-card-subtitle {
         color: #5eead4;
       }
+      .action-card-main {
+        align-items: stretch;
+      }
+      .action-card-heading .action-status-pill {
+        flex: 0 0 auto;
+      }
       .action-accent {
         width: 0.375rem;
         min-width: 0.375rem;
-        height: 3rem;
+        min-height: 2.25rem;
+        height: auto;
         border-radius: 999px;
         background: linear-gradient(180deg, rgba(13, 148, 136, 0.7), rgba(14, 165, 233, 0.4));
       }
@@ -833,6 +964,7 @@
       .action-meta-row {
         display: flex;
         align-items: center;
+        flex-wrap: wrap;
         justify-content: space-between;
         gap: 0.75rem;
         margin-top: 0.6rem;
@@ -840,9 +972,14 @@
         color: var(--text-secondary);
       }
       .action-meta-row > span:first-child {
+        flex: 1 1 8rem;
         min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .action-meta-row > span:last-child {
+        flex: 0 1 auto;
         white-space: nowrap;
       }
       .action-live-note {
@@ -985,6 +1122,7 @@
       .snippet-tooltip {
         pointer-events: none;
         line-height: 1.5;
+        border: 1px solid rgba(148, 163, 184, 0.25);
       }
 
       @keyframes pulse {
@@ -1086,32 +1224,36 @@
       .group:hover .group-hover\:opacity-100 { opacity: 1 !important; }
       .transition-opacity { transition-property: opacity; transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); transition-duration: 150ms; }
 
-      /* Ensure server action buttons show on card hover */
+      /* Keep card controls discoverable while preserving a compact toolbar */
       .server-actions {
-        opacity: 0.4 !important;
+        opacity: 1 !important;
         transition: opacity 0.15s ease-in-out;
         position: relative;
       }
 
-      .server-item:hover .server-actions,
-      .snippet-item:hover .server-actions {
-        opacity: 1 !important;
-      }
-
       .server-action-btn {
-        padding: 0.3125rem;
+        width: 2rem;
+        height: 2rem;
+        padding: 0;
         border-radius: var(--radius-sm);
         color: var(--overlay-1);
         display: inline-flex;
         align-items: center;
         justify-content: center;
         transition: all var(--transition-fast);
+        flex: 0 0 auto;
       }
 
       .server-action-btn:hover {
         color: #3b82f6;
         background: rgba(114, 135, 253, 0.1);
         box-shadow: var(--shadow-sm);
+      }
+
+      .server-action-btn:focus-visible,
+      .card-primary-action:focus-visible {
+        outline: 2px solid var(--ring-color);
+        outline-offset: 2px;
       }
 
       .server-action-btn.delete:hover {
