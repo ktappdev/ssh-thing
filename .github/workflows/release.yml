@@ -154,22 +154,27 @@ jobs:
           version="${RELEASE_VERSION#v}"
 
           if [[ "${{ matrix.name }}" == "macOS-Apple-Silicon" ]]; then
-            directory="target/aarch64-apple-darwin/release/bundle/macos"
+            bundle_root="target/aarch64-apple-darwin/release/bundle"
             suffix="aarch64"
           else
-            directory="target/x86_64-apple-darwin/release/bundle/macos"
+            bundle_root="target/x86_64-apple-darwin/release/bundle"
             suffix="x64"
           fi
 
           shopt -s nullglob
-          files=("${directory}"/*_"${version}"_*.dmg)
+          files=()
+          for directory in "${bundle_root}/macos" "${bundle_root}/dmg"; do
+            candidates=("${directory}"/*_"${version}"_*.dmg)
+            files+=("${candidates[@]}")
+          done
           if (( ${#files[@]} != 1 )); then
-            echo "Expected exactly one ${version} DMG in ${directory}, found ${#files[@]}" >&2
+            echo "Expected exactly one ${version} DMG under ${bundle_root}, found ${#files[@]}" >&2
             printf '%s\n' "${files[@]}" >&2
             exit 1
           fi
 
-          destination="${directory}/SSH.THING_${version}_${suffix}.dmg"
+          destination="${bundle_root}/macos/SSH.THING_${version}_${suffix}.dmg"
+          mkdir -p "${bundle_root}/macos"
           if [[ "${files[0]}" != "${destination}" ]]; then
             mv "${files[0]}" "${destination}"
           fi
