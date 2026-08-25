@@ -141,6 +141,12 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Clean stale macOS DMGs
+        if: startsWith(matrix.name, 'macOS-')
+        shell: bash
+        run: |
+          find "target/${{ matrix.rust_target }}/release/bundle" -type f -name '*.dmg' -delete 2>/dev/null || true
+
       - name: Build release bundle
         run: ${{ matrix.build_command }}
 
@@ -161,12 +167,10 @@ jobs:
             suffix="x64"
           fi
 
-          shopt -s nullglob
           files=()
-          for directory in "${bundle_root}/macos" "${bundle_root}/dmg"; do
-            candidates=("${directory}"/*_"${version}"_*.dmg)
-            files+=("${candidates[@]}")
-          done
+          while IFS= read -r -d '' file; do
+            files+=("${file}")
+          done < <(find "${bundle_root}" -type f -name '*.dmg' -print0)
           if (( ${#files[@]} != 1 )); then
             echo "Expected exactly one ${version} DMG under ${bundle_root}, found ${#files[@]}" >&2
             printf '%s\n' "${files[@]}" >&2
