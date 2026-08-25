@@ -193,14 +193,20 @@ jobs:
         shell: bash
         run: |
           shopt -s nullglob
+          version="${GITHUB_REF_NAME#v}"
           files=()
 
           while IFS= read -r pattern; do
             [[ -z "$pattern" ]] && continue
             matches=( $pattern )
-            if (( ${#matches[@]} > 0 )); then
-              files+=("${matches[@]}")
-            fi
+            for file in "${matches[@]}"; do
+              filename="$(basename "$file")"
+              if [[ "$filename" != *"_${version}_"* ]]; then
+                echo "Ignoring stale release asset: $file"
+                continue
+              fi
+              files+=("$file")
+            done
           done <<'EOF'
           ${{ matrix.asset_glob }}
           EOF

@@ -77,7 +77,11 @@ Before releasing:
    script creates `Release v<version>` and `v<version>`, then pushes both.
 5. Confirm the GitHub Actions release workflow completes. A pushed `v*` tag
    creates the GitHub Release and builds Linux, Windows, Intel macOS, and
-   Apple Silicon macOS assets. The workflow also updates the Homebrew cask.
+   Apple Silicon macOS assets. The workflow filters cached assets from older
+   versions before upload and updates the Homebrew cask only after all build
+   jobs succeed. A local Homebrew update may briefly return 404 while those
+   release assets are still being uploaded; wait for the workflow to finish
+   before treating that as a release failure.
 
 After publishing, verify the local handoff:
 
