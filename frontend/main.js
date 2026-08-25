@@ -31,6 +31,15 @@ let closeRequestInProgress = false;
 let actionManager = null;
 let sessionManager = null;
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function loadTerminalSettings() {
   try {
     const saved = JSON.parse(localStorage.getItem("terminal-settings") || "{}");
@@ -315,8 +324,8 @@ function logConnectionEvent(message, detail = "", type = "info") {
       .reverse()
       .map((item) => {
         const color = item.type === "error" ? "text-red-500" : item.type === "warning" ? "text-yellow-500" : "text-green-500";
-        const detailText = item.detail ? ` — ${item.detail}` : "";
-        return `<li class=\"flex justify-between text-xs py-0.5 border-b border-gray-100 dark:border-gray-700\"><span class=\"text-gray-500 dark:text-gray-400\">${item.timestamp}</span><span class=\"ml-2 ${color}\">${item.message}${detailText}</span></li>`;
+        const detailText = item.detail ? ` — ${escapeHtml(item.detail)}` : "";
+        return `<li class=\"flex justify-between text-xs py-0.5 border-b border-gray-100 dark:border-gray-700\"><span class=\"text-gray-500 dark:text-gray-400\">${escapeHtml(item.timestamp)}</span><span class=\"ml-2 ${color}\">${escapeHtml(item.message)}${detailText}</span></li>`;
       })
       .join("");
   }
@@ -545,26 +554,30 @@ function renderSnippetList() {
     const firstPart = snippet.command.split('&&')[0].trim();
     const displayCommand = firstPart.length > 28 ? firstPart.substring(0, 28) + '...' : firstPart;
     const hasMore = snippet.command.includes('&&') || snippet.command.length > 28;
+    const safeSnippetId = escapeHtml(snippet.id);
+    const safeSnippetName = escapeHtml(snippet.name);
+    const safeDisplayCommand = escapeHtml(displayCommand);
+    const safeSnippetCommand = escapeHtml(snippet.command);
     
     div.innerHTML = `
       <div class="w-2 h-2 rounded-full bg-blue-400 dark:bg-blue-500/60 flex-shrink-0" aria-hidden="true"></div>
       <div class="min-w-0 flex-1">
-        <div class="server-card-name truncate">${snippet.name}</div>
-        <div class="server-card-subtitle font-mono truncate text-blue-600/70 dark:text-blue-400/70">${displayCommand}${hasMore ? ' <span class="text-gray-400 dark:text-gray-500">+more</span>' : ''}</div>
+        <div class="server-card-name truncate">${safeSnippetName}</div>
+        <div class="server-card-subtitle font-mono truncate text-blue-600/70 dark:text-blue-400/70">${safeDisplayCommand}${hasMore ? ' <span class="text-gray-400 dark:text-gray-500">+more</span>' : ''}</div>
       </div>
       <div class="server-actions flex gap-1 flex-shrink-0">
-        <button class="server-action-btn snippet-edit-btn" data-id="${snippet.id}" title="Edit">
+        <button class="server-action-btn snippet-edit-btn" data-id="${safeSnippetId}" title="Edit">
           <svg class="server-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
         </button>
-        <button class="server-action-btn delete snippet-delete-btn" data-id="${snippet.id}" title="Delete">
+        <button class="server-action-btn delete snippet-delete-btn" data-id="${safeSnippetId}" title="Delete">
           <svg class="server-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
         </button>
       </div>
-      <button class="ghost-btn ghost-btn-primary snippet-run-btn flex-shrink-0" data-id="${snippet.id}">
+      <button class="ghost-btn ghost-btn-primary snippet-run-btn flex-shrink-0" data-id="${safeSnippetId}">
         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
         Run
       </button>
-      <div class="snippet-tooltip hidden absolute left-0 right-0 bottom-full mb-1 z-50 bg-gray-900 dark:bg-gray-700 text-white text-xs font-mono p-3 rounded-lg shadow-lg whitespace-pre-wrap break-all max-h-48 overflow-y-auto">${snippet.command}</div>
+      <div class="snippet-tooltip hidden absolute left-0 right-0 bottom-full mb-1 z-50 bg-gray-900 dark:bg-gray-700 text-white text-xs font-mono p-3 rounded-lg shadow-lg whitespace-pre-wrap break-all max-h-48 overflow-y-auto">${safeSnippetCommand}</div>
     `;
     
     const tooltip = div.querySelector('.snippet-tooltip');

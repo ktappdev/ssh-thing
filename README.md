@@ -1,6 +1,6 @@
 # SSH Thing
 
-[![Version](https://img.shields.io/badge/version-1.1.21-blue.svg)](https://github.com/ktappdev/ssh-thing/releases)
+[![Version](https://img.shields.io/github/v/release/ktappdev/ssh-thing?label=version)](https://github.com/ktappdev/ssh-thing/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Tauri 2.x](https://img.shields.io/badge/Tauri-2.x-orange.svg)](https://v2.tauri.app)
 [![Rust](https://img.shields.io/badge/Rust-2021-yellow.svg)](https://www.rust-lang.org)
@@ -52,15 +52,34 @@ Most SSH clients try to do everything. SSH Thing does what you actually need:
 
 Get the latest release from the [Releases page](https://github.com/ktappdev/ssh-thing/releases).
 
+### One-command macOS installer
+
+On macOS, this command downloads the latest release for your CPU, installs
+**SSH THING** into `/Applications`, removes the quarantine attribute that can
+block this unsigned/not notarized build, and launches the app:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ktappdev/ssh-thing/main/scripts/install-latest-macos.sh \
+  -o /tmp/install-ssh-thing.sh && \
+bash /tmp/install-ssh-thing.sh
+```
+
+The installer downloads only from the official `ktappdev/ssh-thing` GitHub
+repository. It may ask for your macOS administrator password when replacing an
+existing copy in `/Applications`. Removing quarantine bypasses the initial
+Gatekeeper warning; review the script and release source before running it.
+
 ### Platform-Specific Notes
 
 #### macOS
 1. Mount the `.dmg` and drag **SSH Thing** to Applications
 2. If blocked by Gatekeeper, run:
    ```bash
-   sudo xattr -cr "/Applications/SSH THING.app"
+   sudo xattr -dr com.apple.quarantine "/Applications/SSH THING.app"
    ```
 3. Or right-click → Open
+
+For an automated install, use the [one-command macOS installer](#one-command-macos-installer).
 
 #### Windows
 1. Run the `.msi` installer

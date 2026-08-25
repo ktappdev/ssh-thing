@@ -89,13 +89,13 @@ jobs:
             rust_target: aarch64-apple-darwin
             build_command: npm run tauri build -- --target aarch64-apple-darwin
             asset_glob: |
-              target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+              target/aarch64-apple-darwin/release/bundle/macos/*.dmg
           - name: macOS-Intel
             os: macos-latest
             rust_target: x86_64-apple-darwin
             build_command: npm run tauri build -- --target x86_64-apple-darwin
             asset_glob: |
-              target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+              target/x86_64-apple-darwin/release/bundle/macos/*.dmg
 
     steps:
       - name: Checkout repository
@@ -143,6 +143,36 @@ jobs:
 
       - name: Build release bundle
         run: ${{ matrix.build_command }}
+
+      - name: Normalize macOS DMG name
+        if: startsWith(matrix.name, 'macOS-')
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_VERSION#v}"
+
+          if [[ "${{ matrix.name }}" == "macOS-Apple-Silicon" ]]; then
+            directory="target/aarch64-apple-darwin/release/bundle/macos"
+            suffix="aarch64"
+          else
+            directory="target/x86_64-apple-darwin/release/bundle/macos"
+            suffix="x64"
+          fi
+
+          shopt -s nullglob
+          files=("${directory}"/*_"${version}"_*.dmg)
+          if (( ${#files[@]} != 1 )); then
+            echo "Expected exactly one ${version} DMG in ${directory}, found ${#files[@]}" >&2
+            printf '%s\n' "${files[@]}" >&2
+            exit 1
+          fi
+
+          destination="${directory}/SSH.THING_${version}_${suffix}.dmg"
+          if [[ "${files[0]}" != "${destination}" ]]; then
+            mv "${files[0]}" "${destination}"
+          fi
 
       - name: List bundle outputs
         shell: bash

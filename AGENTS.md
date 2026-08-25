@@ -33,6 +33,58 @@ npm run tauri build -- --target x86_64-pc-windows-msvc  # Windows
 npm run tauri build -- --target x86_64-unknown-linux-gnu  # Linux
 ```
 
+### Release and GitHub Publishing
+
+The application version is kept synchronized in `package.json`,
+`package-lock.json`, root `Cargo.toml`, and `src-tauri/tauri.conf.json`. Use the
+release scripts instead of editing those files individually.
+
+```bash
+# Bump PATCH (for example, 1.1.31 -> 1.1.32), create the release commit and
+# tag, and push both to GitHub after confirmation.
+npm run release
+
+# Or choose an exact SemVer version (including a prerelease) explicitly.
+./scripts/release-tag.sh 1.2.0 --push
+```
+
+Before releasing:
+
+1. Finish and commit feature or bug-fix changes. `release-tag.sh` refuses to
+   run with a dirty worktree unless `--allow-dirty` is supplied. Do not use
+   that override for normal releases because it can leave unrelated changes
+   out of the release commit.
+2. Run the focused quality gates:
+
+   ```bash
+   node --check frontend/main.js
+   cargo fmt --all --check
+   cargo test --workspace
+   cargo clippy --workspace --all-targets -- -D warnings
+   ```
+
+3. Build the intended distribution target. For macOS, use
+   `npm run build:macos` or `npm run build:release`; the latter builds Intel
+   and Apple Silicon DMGs and copies them into `release-builds/`.
+4. Run `npm run release`, review the proposed version, and press Enter. The
+   script creates `Release v<version>` and `v<version>`, then pushes both.
+5. Confirm the GitHub Actions release workflow completes. A pushed `v*` tag
+   creates the GitHub Release and builds Linux, Windows, Intel macOS, and
+   Apple Silicon macOS assets. The workflow also updates the Homebrew cask.
+
+After publishing, verify the local handoff:
+
+```bash
+git status --short --branch
+git fetch --tags origin
+git describe --tags --exact-match HEAD
+```
+
+The branch should be clean and the exact release tag should point at the
+published commit. `npm run release` increments only the PATCH segment; use
+`release:tag` for deliberate major/minor or prerelease versions. Do not move
+an existing release tag without investigating the remote state first.
+
 ### Rust Commands
 ```bash
 cargo build                    # Debug build

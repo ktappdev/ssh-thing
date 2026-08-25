@@ -371,7 +371,7 @@ pub async fn get_action_history(
 ) -> Result<Vec<ActionHistoryEntry>, String> {
     let app_dir = get_app_dir(&app)?;
     let mut history = load_action_history(&app_dir)?;
-    history.sort_by(|left, right| right.completed_at.cmp(&left.completed_at));
+    history.sort_by_key(|entry| std::cmp::Reverse(entry.completed_at));
 
     if let Some(target_id) = action_id {
         history.retain(|entry| entry.action_id == target_id);

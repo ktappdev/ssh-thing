@@ -61,10 +61,13 @@ function createServerCard({ server, summary, formatLastConnected, onPrimaryActio
 
   const displayName = server.nickname && server.nickname.trim().length > 0 ? server.nickname : `${server.user}@${server.host}`;
   const safeDisplayName = escapeHtml(displayName);
+  const safeServerId = escapeHtml(server.id);
   const subtitle = server.nickname && server.nickname.trim().length > 0
     ? `${server.user}@${server.host}`
     : `Port ${server.port}`;
   const meta = buildMeta(server, summary, formatLastConnected);
+  const safeSubtitle = escapeHtml(subtitle);
+  const safeMeta = meta.map(escapeHtml).join(" • ");
 
   const buttonLabel = hasLiveSessions ? "New Session" : "Connect";
   const buttonClass = hasLiveSessions ? "ghost-btn-primary" : "ghost-btn-success";
@@ -77,23 +80,23 @@ function createServerCard({ server, summary, formatLastConnected, onPrimaryActio
     <div class="flex items-center gap-2.5 min-w-0 flex-1">
       ${statusDot(summary)}
       <div class="min-w-0 flex-1">
-        <div class="server-card-name truncate">${displayName}</div>
-        <div class="server-card-subtitle truncate">${subtitle}</div>
-        <div class="server-card-meta truncate">${meta.join(" • ")}</div>
+        <div class="server-card-name truncate">${safeDisplayName}</div>
+        <div class="server-card-subtitle truncate">${safeSubtitle}</div>
+        <div class="server-card-meta truncate">${safeMeta}</div>
       </div>
     </div>
     <div class="server-actions flex gap-1 flex-shrink-0">
-      <button class="server-action-btn duplicate-btn" data-id="${server.id}" title="Duplicate" aria-label="Duplicate ${safeDisplayName}">
+      <button class="server-action-btn duplicate-btn" data-id="${safeServerId}" title="Duplicate" aria-label="Duplicate ${safeDisplayName}">
         <svg class="server-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2M10 20h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"></path></svg>
       </button>
-      <button class="server-action-btn edit-btn" data-id="${server.id}" title="Edit" aria-label="Edit ${safeDisplayName}">
+      <button class="server-action-btn edit-btn" data-id="${safeServerId}" title="Edit" aria-label="Edit ${safeDisplayName}">
         <svg class="server-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
       </button>
-      <button class="server-action-btn delete delete-btn" data-id="${server.id}" title="Delete" aria-label="Delete ${safeDisplayName}">
+      <button class="server-action-btn delete delete-btn" data-id="${safeServerId}" title="Delete" aria-label="Delete ${safeDisplayName}">
         <svg class="server-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
       </button>
     </div>
-    <button class="ghost-btn connect-btn ${buttonClass} flex-shrink-0" data-id="${server.id}" aria-label="${buttonLabel} to ${safeDisplayName}">
+    <button class="ghost-btn connect-btn ${buttonClass} flex-shrink-0" data-id="${safeServerId}" aria-label="${buttonLabel} to ${safeDisplayName}">
       <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">${buttonIcon}</svg>
       ${buttonLabel}
     </button>
@@ -149,7 +152,7 @@ export function renderServerList({
   }
 
   if (filteredServers.length === 0) {
-    listEl.innerHTML = `<div class="text-center text-gray-500 dark:text-gray-400 mt-10 text-sm">No matches for "${filterTerm}".</div>`;
+    listEl.innerHTML = `<div class="text-center text-gray-500 dark:text-gray-400 mt-10 text-sm">No matches for "${escapeHtml(filterTerm)}".</div>`;
     return;
   }
 

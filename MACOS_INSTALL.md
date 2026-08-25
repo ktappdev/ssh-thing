@@ -4,6 +4,22 @@ ssh-thing is currently not signed/notarized. On macOS, this means Gatekeeper may
 
 ## Recommended install
 
+For the latest release, the repository includes an installer that selects the
+correct Intel or Apple Silicon DMG, installs it into `/Applications`, removes
+the quarantine attribute, and launches the app:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ktappdev/ssh-thing/main/scripts/install-latest-macos.sh \
+  -o /tmp/install-ssh-thing.sh && \
+bash /tmp/install-ssh-thing.sh
+```
+
+The script downloads only from the official GitHub repository and may ask for
+your administrator password when replacing an existing application. Because
+the current release is unsigned/not notarized, it removes `com.apple.quarantine`
+to avoid the first-launch Gatekeeper block. Review the script before running it
+if you prefer to keep the normal Gatekeeper prompt.
+
 1. Download the `.dmg` from the GitHub release.
 2. Open the `.dmg`.
 3. Drag **SSH Thing** to **Applications**.
@@ -30,7 +46,7 @@ ssh-thing is currently not signed/notarized. On macOS, this means Gatekeeper may
 Sometimes the file quarantine flag causes a “damaged” message.
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/ssh-thing.app
+sudo xattr -dr com.apple.quarantine "/Applications/SSH THING.app"
 ```
 
 ## Requirements
