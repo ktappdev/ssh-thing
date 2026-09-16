@@ -65,17 +65,22 @@ Run and passing on the current tree:
 node --check frontend/main.js
 node --check frontend/components/automation-manager.js
 cargo fmt --all --check
-cargo test --workspace                                # 73 passed, 0 failed
+cargo test --workspace                                # 85 passed, 0 failed
 cargo clippy --workspace --all-targets -- -D warnings  # clean
 cargo build -p tauri-app                              # links
 cargo build --release -p ssh-thing-cli                # 3.99 MB binary
 ```
 
-The CLI was exercised end to end against a fixture data directory
-(`SSH_THING_DATA_DIR`). Verified: the automation gate refuses, unscoped snippets
-refuse, cross-server requests refuse, `--dry-run` resolves without connecting,
-a refused TCP connect is reported, and an **unknown host key is refused while
-`known_hosts.json` stays empty** (checked against `github.com:22`).
+`crates/ssh-thing-cli/tests/cli.rs` runs the real binary against a fixture data
+directory for 12 cases, with no network access: the automation gate refuses,
+unscoped snippets refuse, cross-server requests refuse, a snippet whose server
+vanished refuses, ambiguous and unknown selectors exit 1, `--dry-run` resolves
+without connecting, the timeout clamp is reported, `servers` output carries no
+secret material, and history records the run.
+
+Manually verified on top of that: a refused TCP connect is reported with the
+full report attached, and an **unknown host key is refused while
+`known_hosts.json` stays byte-identical** (checked against `github.com:22`).
 
 **Not verified — the honest gaps:**
 

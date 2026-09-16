@@ -152,14 +152,21 @@ command, which §4a independently forces.
 node --check frontend/main.js
 node --check frontend/components/automation-manager.js
 cargo fmt --all --check
-cargo test --workspace                                   # 73 passed
+cargo test --workspace                                   # 85 passed
 cargo clippy --workspace --all-targets -- -D warnings     # clean
 cargo build -p tauri-app                                  # links
 cargo build --release -p ssh-thing-cli                    # 3.99 MB
 ```
 
 Test distribution: 40 in `tauri-app` (pre-existing suite, unchanged and still
-passing against core types), 25 in `ssh-thing-core`, 8 in `ssh-thing-cli`.
+passing against core types), 25 in `ssh-thing-core`, 8 unit + 12 integration in
+`ssh-thing-cli`.
+
+`crates/ssh-thing-cli/tests/cli.rs` invokes the compiled binary through
+`env!("CARGO_BIN_EXE_ssh-thing")` with `SSH_THING_DATA_DIR` pointed at a
+throwaway fixture directory. It covers the gate, scope validation, dry runs,
+timeout clamping, selector resolution, history, and the guarantee that
+`servers` output contains no credential material — all without a network.
 
 End-to-end CLI checks against a fixture directory
 (`SSH_THING_DATA_DIR=/tmp/ssh-thing-fixture`, two fake servers, three snippets):
@@ -208,6 +215,7 @@ the frontend; all other multi-word arguments already used camelCase.
 Nothing here is a design unknown; every item is closed by running the thing.
 
 1. First release carrying `ssh-thing_<version>_<platform>` + `.sha256` assets.
+   Only then does `install_cli` have anything to fetch.
 2. One successful CLI run against a real server.
 3. One pass through the Automation panel: toggle, install, uninstall.
 4. D1 — whether Actions is removed (a product call, not engineering).
