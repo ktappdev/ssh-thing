@@ -30,31 +30,31 @@ binaries yet.
 | `FEATURE_ACTIONS.md` | The original Actions design doc. Superseded by scoped snippets; Actions still exists. | Historical, see decision D1 |
 | `AGENTS.md` | Repo-wide agent guidelines: build commands, release process, code style, docs map. | Current — **see trap #2** |
 
-## Working tree state (uncommitted)
+## Working tree state
 
-Branch `main`, tracking `origin/main`. Last commit `06994fd "Filter stale
-release assets"` on top of `4b60c9a "Release v1.1.33"`.
+Branch `main`. Commit `d2379ad "Add shared core, LLM CLI, and automation panel"`
+sits directly on `06994fd "Filter stale release assets"`, which is on top of
+`4b60c9a "Release v1.1.33"`. Nothing is uncommitted except this document's own
+catch-up edits.
 
-Everything below is uncommitted and unpushed:
+Everything below landed in `d2379ad`:
 
 ```text
- M .github/workflows/release.yml         add build-cli job + .sha256 assets
- M AGENTS.md                             docs map, key files, CLI commands
- M Cargo.toml                            workspace members + workspace.package
- M Cargo.lock                            new deps (clap, dirs, reqwest, sha2, hex)
- M frontend/index.html                   Automation menu item, modal, styles
- M frontend/main.js                      automation manager wiring, upsert_secret key fix
- M frontend/components/session-manager.js scoped-snippet auto-connect
- M src-tauri/Cargo.toml                  ssh-thing-core path dep; drop keyring+toml
- M src-tauri/src/actions.rs              delegates exec + history to core
- M src-tauri/src/lib.rs                  thin wrappers over core, new commands
-?? crates/                                ssh-thing-core + ssh-thing-cli (12 files)
-?? src-tauri/src/cli_manager.rs           installer + CLI status commands
-?? frontend/components/automation-manager.js
-?? docs/CLI-FOR-LLMS.md
-?? docs/CLI-KNOWLEDGE-BASE.md
-?? docs/STATE-OF-WORK.md
-?? FEATURE_SCOPED_SNIPPETS.md
+ .github/workflows/release.yml         build-cli job + .sha256 assets
+ AGENTS.md                             docs map, key files, CLI commands, release notes
+ Cargo.toml / Cargo.lock               workspace members, workspace.package version
+ frontend/index.html                   Automation menu item, modal, styles
+ frontend/main.js                      automation wiring, upsert_secret key fix
+ frontend/components/session-manager.js scoped-snippet auto-connect
+ src-tauri/Cargo.toml                  ssh-thing-core path dep; keyring + toml dropped
+ src-tauri/src/actions.rs              delegates exec + history to core
+ src-tauri/src/lib.rs                  thin wrappers over core, new commands
+ src-tauri/src/cli_manager.rs          installer + CLI status commands
+ crates/ssh-thing-core/                6 modules, no tauri dependency
+ crates/ssh-thing-cli/                 3 modules, binary "ssh-thing"
+ frontend/components/automation-manager.js
+ docs/CLI-FOR-LLMS.md, docs/CLI-KNOWLEDGE-BASE.md, docs/STATE-OF-WORK.md
+ FEATURE_SCOPED_SNIPPETS.md
 ```
 
 ## Verification status
@@ -118,16 +118,15 @@ a refused TCP connect is reported, and an **unknown host key is refused while
 
 ## Next steps, in recommended order
 
-1. **Dogfood before committing further.** `npm run tauri dev`, then: open the
-   header menu → Automation, turn on *Allow external automation*, scope a snippet
-   to a real server, and run one Action to confirm the refactored execution path
-   still works.
-2. **Commit in three chunks** so history stays reviewable:
-   scoped snippets; the core extraction + CLI; the Automation panel + CI.
-3. **Cut the first release with CLI assets.** Bump the patch version so
+1. **Dogfood before releasing.** `npm run tauri dev`, then: open the header menu
+   → Automation, turn on *Allow external automation*, scope a snippet to a real
+   server, and run one Action to confirm the refactored execution path still
+   works.
+2. **Cut the first release with CLI assets.** Bump the patch version so
    `build-cli` runs, confirm the three `ssh-thing_<version>_<platform>` assets and
    their `.sha256` files appear on the release, then use Install CLI for real.
-4. **Then decide D1** and, if Actions goes, remove it in its own commit.
+   This is what turns `install_cli` from untested into tested.
+3. **Then decide D1** and, if Actions goes, remove it in its own commit.
 
 ## Things a fresh agent must not assume
 
