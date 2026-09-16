@@ -1,18 +1,15 @@
 mod actions;
+mod cli_manager;
 mod osc52;
 
 use async_trait::async_trait;
-use keyring::Entry;
 use osc52::{Osc52Processor, SystemClipboard};
-use russh::client::{Config, Handle, Handler};
+use russh::client::{Handle, Handler};
 use russh::keys;
 use russh::keys::PublicKeyBase64;
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
@@ -27,22 +24,22 @@ pub use actions::{
     add_action, delete_action, execute_action, get_action_history, get_actions, update_action,
 };
 
-const SERVERS_FILE: &str = "servers.json";
-const SNIPPETS_FILE: &str = "snippets.json";
-const KNOWN_HOSTS_FILE: &str = "known_hosts.json";
+// Data shapes and storage now live in `ssh-thing-core` so the CLI can share
+// them without linking Tauri. Re-exported here so the rest of this crate (and
+// `actions.rs`) keeps using short paths.
+pub use ssh_thing_core::model::{
+    Action, ActionExecutionEvent, ActionHistoryEntry, AuthMethod, ConnectionState,
+    ConnectionStateEvent, ExportData, HostKeyMismatch, HostKeyPrompt, ImportResult, KnownHost,
+    SecretKind, ServerConnection, Snippet, TerminalOutput,
+};
+use ssh_thing_core::{store as core_store, AutomationSettings};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum ConnectionState {
-    Connecting,
-    Connected,
-    Disconnected,
-    Error(String),
-}
+use cli_manager::{cli_status, install_cli, uninstall_cli};
 
 #[tauri::command]
 async fn get_servers(app: AppHandle) -> Result<Vec<ServerConnection>, String> {
     let app_dir = get_app_dir(&app)?;
-    load_servers(&app_dir, &app)
+    core_store::load_servers_migrated(&app_dir)
 }
 
 #[tauri::command]
@@ -52,7 +49,7 @@ async fn update_server(
     server: ServerConnection,
 ) -> Result<Vec<ServerConnection>, String> {
     let app_dir = get_app_dir(&app)?;
-    let mut servers = load_servers(&app_dir, &app)?;
+    let mut servers = core_store::load_servers_migrated(&app_dir)?;
 
     let index = servers
         .iter()
@@ -60,9 +57,9 @@ async fn update_server(
         .ok_or_else(|| format!("Server with id {} not found", id))?;
 
     let mut updated = server;
-    migrate_server_auth(&app, &mut updated)?;
+    core_store::migrate_server_auth(&mut updated)?;
     servers[index] = updated;
-    save_servers(&app_dir, &servers)?;
+    core_store::save_servers(&app_dir, &servers)?;
     Ok(servers)
 }
 
@@ -82,7 +79,7 @@ async fn trust_host_key(app: AppHandle, id: String) -> Result<(), String> {
     let _ = pending.sender.send(true);
 
     let app_dir = get_app_dir(&app)?;
-    let mut hosts = load_known_hosts(&app_dir)?;
+    let mut hosts = core_store::load_known_hosts(&app_dir)?;
     // Use values from the pending struct, not arguments
     let host = pending.host;
     let port = pending.port;
@@ -100,7 +97,7 @@ async fn trust_host_key(app: AppHandle, id: String) -> Result<(), String> {
         public_key_base64: pending.public_key_base64,
         added_at,
     });
-    save_known_hosts(&app_dir, &hosts)
+    core_store::save_known_hosts(&app_dir, &hosts)
 }
 
 #[tauri::command]
@@ -117,54 +114,6 @@ async fn reject_host_key(app: AppHandle, id: String) -> Result<(), String> {
     }
 
     Ok(())
-}
-
-fn get_snippets_path(app_dir: &Path) -> PathBuf {
-    app_dir.join(SNIPPETS_FILE)
-}
-
-fn load_snippets(app_dir: &Path) -> Result<Vec<Snippet>, String> {
-    let path = get_snippets_path(app_dir);
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-    let data =
-        fs::read_to_string(&path).map_err(|e| format!("Failed to read snippets file: {}", e))?;
-    parse_json_array_lenient(&data, "snippets")
-}
-
-fn save_snippets(app_dir: &Path, snippets: &Vec<Snippet>) -> Result<(), String> {
-    let path = get_snippets_path(app_dir);
-    let parent = path
-        .parent()
-        .ok_or_else(|| "Invalid path for snippets file".to_string())?;
-    fs::create_dir_all(parent)
-        .map_err(|e| format!("Failed to create app data directory: {}", e))?;
-    let content = serde_json::to_string_pretty(snippets)
-        .map_err(|e| format!("Failed to serialize snippets: {}", e))?;
-    fs::write(&path, content).map_err(|e| format!("Failed to write snippets file: {}", e))?;
-    Ok(())
-}
-
-fn save_servers(app_dir: &Path, servers: &Vec<ServerConnection>) -> Result<(), String> {
-    let path = get_servers_path(app_dir);
-    let parent = path
-        .parent()
-        .ok_or_else(|| "Invalid path for servers file".to_string())?;
-    fs::create_dir_all(parent)
-        .map_err(|e| format!("Failed to create app data directory: {}", e))?;
-    let content = serde_json::to_string_pretty(servers)
-        .map_err(|e| format!("Failed to serialize servers: {}", e))?;
-    fs::write(&path, content).map_err(|e| format!("Failed to write servers file: {}", e))?;
-    Ok(())
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConnectionStateEvent {
-    pub connection_id: Option<String>,
-    pub server_id: Option<String>,
-    pub shell_id: Option<String>,
-    pub state: ConnectionState,
 }
 
 pub struct SshClientHandler {
@@ -197,9 +146,11 @@ fn emit_connection_state(
 impl Handler for SshClientHandler {
     type Error = russh::Error;
 
-    // NOTE: This currently accepts any server host key (similar to StrictHostKeyChecking=no).
-    // For a real SSH client, implement TOFU/known_hosts persistence and prompt the user
-    // before trusting a new key.
+    // Host-key policy: TOFU via `known_hosts.json`. A key already stored and
+    // matching is accepted; a changed key emits `host-key-mismatch`; an unknown
+    // host emits `host-key-prompt` and waits for the user's decision.
+    // The CLI counterpart (`core::ssh::StrictHostKeyHandler`) never prompts —
+    // it fails closed and points the user back here.
     async fn check_server_key(
         &mut self,
         server_public_key: &keys::key::PublicKey,
@@ -224,7 +175,7 @@ impl Handler for SshClientHandler {
             }
         };
 
-        let known_hosts = match load_known_hosts(&app_dir) {
+        let known_hosts = match core_store::load_known_hosts(&app_dir) {
             Ok(hosts) => hosts,
             Err(err) => {
                 let _ = emit_connection_state(
@@ -238,9 +189,8 @@ impl Handler for SshClientHandler {
             }
         };
 
-        if let Some(known) = known_hosts
-            .iter()
-            .find(|entry| entry.host == self.host && entry.port == self.port)
+        if let Some(known) =
+            ssh_thing_core::ssh::find_known_host(&known_hosts, &self.host, self.port)
         {
             if known.fingerprint == fingerprint && known.key_type == key_type {
                 return Ok(true);
@@ -294,101 +244,6 @@ impl Handler for SshClientHandler {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServerConnection {
-    pub id: String,
-    #[serde(default)]
-    pub nickname: Option<String>,
-    pub host: String,
-    pub port: u16,
-    pub user: String,
-    #[serde(default)]
-    pub timeout_seconds: Option<u64>,
-    #[serde(default)]
-    pub last_connected_at: Option<u64>,
-    pub auth: AuthMethod,
-}
-
-fn keyring_service_name() -> String {
-    "com.ssh-thing".to_string()
-}
-
-fn put_secret(_app: &AppHandle, secret_id: &str, secret: &str) -> Result<(), String> {
-    let entry = Entry::new(&keyring_service_name(), secret_id)
-        .map_err(|e| format!("keyring entry failed: {}", e))?;
-    entry
-        .set_password(secret)
-        .map_err(|e| format!("keyring set failed: {}", e))?;
-    Ok(())
-}
-
-fn get_secret(_app: &AppHandle, secret_id: &str) -> Result<String, String> {
-    let entry = Entry::new(&keyring_service_name(), secret_id)
-        .map_err(|e| format!("keyring entry failed: {}", e))?;
-    entry
-        .get_password()
-        .map_err(|e| format!("keyring get failed: {}", e))
-}
-
-fn delete_secret(_app: &AppHandle, secret_id: &str) -> Result<(), String> {
-    let entry = Entry::new(&keyring_service_name(), secret_id)
-        .map_err(|e| format!("keyring entry failed: {}", e))?;
-    entry
-        .delete_password()
-        .map_err(|e| format!("keyring delete failed: {}", e))
-}
-
-fn migrate_server_auth(app: &AppHandle, server: &mut ServerConnection) -> Result<(), String> {
-    match &server.auth {
-        AuthMethod::SecretRef { .. } => Ok(()),
-        AuthMethod::Password { password } => {
-            let secret_id = format!("server:{}:password", server.id);
-            put_secret(app, &secret_id, password)?;
-            server.auth = AuthMethod::SecretRef {
-                secret_id,
-                kind: SecretKind::Password,
-            };
-            Ok(())
-        }
-        AuthMethod::Key { private_key } => {
-            let secret_id = format!("server:{}:private_key", server.id);
-            put_secret(app, &secret_id, private_key)?;
-            server.auth = AuthMethod::SecretRef {
-                secret_id,
-                kind: SecretKind::PrivateKey,
-            };
-            Ok(())
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum SecretKind {
-    Password,
-    PrivateKey,
-}
-
-fn default_secret_kind() -> SecretKind {
-    SecretKind::Password
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum AuthMethod {
-    SecretRef {
-        secret_id: String,
-        #[serde(default = "default_secret_kind")]
-        kind: SecretKind,
-    },
-    // Legacy shapes kept for migration
-    Password {
-        password: String,
-    },
-    Key {
-        private_key: String,
-    },
-}
-
 pub type SshSession = Handle<SshClientHandler>;
 
 pub struct ManagedSession {
@@ -410,67 +265,6 @@ pub struct PtyConfig {
     pub term: String,
     pub width: u32,
     pub height: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Snippet {
-    pub id: String,
-    pub name: String,
-    pub command: String,
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExportData {
-    pub version: String,
-    pub exported_at: u64,
-    pub snippets: Vec<Snippet>,
-    pub actions: Vec<crate::actions::Action>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ImportResult {
-    pub snippets_imported: usize,
-    pub snippets_skipped: usize,
-    pub actions_imported: usize,
-    pub actions_skipped: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TerminalOutput {
-    pub connection_id: Option<String>,
-    pub server_id: Option<String>,
-    pub shell_id: String,
-    pub output: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KnownHost {
-    pub host: String,
-    pub port: u16,
-    pub key_type: String,
-    pub fingerprint: String,
-    pub public_key_base64: String,
-    pub added_at: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HostKeyPrompt {
-    pub id: String,
-    pub host: String,
-    pub port: u16,
-    pub key_type: String,
-    pub fingerprint: String,
-    pub public_key_base64: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HostKeyMismatch {
-    pub host: String,
-    pub port: u16,
-    pub key_type: String,
-    pub fingerprint: String,
-    pub stored_fingerprint: String,
 }
 
 #[derive(Debug)]
@@ -563,6 +357,7 @@ mod tests {
             name: "Test Snippet".to_string(),
             command: "echo hello".to_string(),
             description: Some("A test snippet".to_string()),
+            server_id: Some("server-1".to_string()),
         };
 
         let json = serde_json::to_string(&snippet).expect("Failed to serialize");
@@ -572,6 +367,7 @@ mod tests {
         assert_eq!(snippet.name, deserialized.name);
         assert_eq!(snippet.command, deserialized.command);
         assert_eq!(snippet.description, deserialized.description);
+        assert_eq!(snippet.server_id, deserialized.server_id);
     }
 
     #[test]
@@ -581,6 +377,7 @@ mod tests {
             name: "No Description".to_string(),
             command: "ls -la".to_string(),
             description: None,
+            server_id: None,
         };
 
         let json = serde_json::to_string(&snippet).expect("Failed to serialize");
@@ -589,6 +386,19 @@ mod tests {
         assert_eq!(snippet.id, deserialized.id);
         assert_eq!(snippet.name, deserialized.name);
         assert_eq!(snippet.description, deserialized.description);
+        assert_eq!(snippet.server_id, deserialized.server_id);
+    }
+
+    #[test]
+    fn test_legacy_snippet_without_server_id_deserializes() {
+        // Snippets written before server scoping have no `server_id` field.
+        let json = r#"{"id":"snippet-legacy","name":"Legacy","command":"uptime"}"#;
+        let snippet: Snippet =
+            serde_json::from_str(json).expect("Failed to deserialize legacy snippet");
+
+        assert_eq!(snippet.id, "snippet-legacy");
+        assert_eq!(snippet.server_id, None);
+        assert_eq!(snippet.description, None);
     }
 
     #[test]
@@ -935,20 +745,18 @@ pub async fn connect_ssh(
     connection_id: Option<&str>,
     server_id: Option<&str>,
 ) -> Result<SshSession, String> {
-    let addr = format!("{}:{}", host, port);
-
     #[cfg(debug_assertions)]
-    let auth_type = match auth {
-        AuthMethod::SecretRef { kind, .. } => match kind {
-            SecretKind::Password => "password",
-            SecretKind::PrivateKey => "key",
-        },
-        AuthMethod::Password { .. } => "password",
-        AuthMethod::Key { .. } => "key",
-    };
-
-    #[cfg(debug_assertions)]
-    debug!(host, port, user, auth_type, "Starting SSH connection");
+    {
+        let auth_type = match auth {
+            AuthMethod::SecretRef { kind, .. } => match kind {
+                SecretKind::Password => "password",
+                SecretKind::PrivateKey => "key",
+            },
+            AuthMethod::Password { .. } => "password",
+            AuthMethod::Key { .. } => "key",
+        };
+        debug!(host, port, user, auth_type, "Starting SSH connection");
+    }
 
     emit_connection_state(
         app,
@@ -958,203 +766,30 @@ pub async fn connect_ssh(
         ConnectionState::Connecting,
     )?;
 
-    let config = Arc::new(Config {
-        keepalive_interval: Some(Duration::from_secs(15)),
-        keepalive_max: 3,
-        ..Config::default()
-    });
-
     #[cfg(debug_assertions)]
-    debug!(%addr, "Establishing TCP connection");
+    debug!(host, port, "Establishing TCP connection");
 
+    // The interactive host-key handler lives on the desktop side; the connect,
+    // authenticate, and timeout logic is shared with the CLI in `ssh-thing-core`.
     let handler = SshClientHandler {
         app: app.clone(),
         host: host.to_string(),
         port,
-        connection_id: connection_id.map(|s| s.to_string()),
-        server_id: server_id.map(|s| s.to_string()),
+        connection_id: connection_id.map(|value| value.to_string()),
+        server_id: server_id.map(|value| value.to_string()),
     };
-    let connect_timeout = Duration::from_secs(timeout_seconds.unwrap_or(30).max(1));
-    let mut session = timeout(
-        connect_timeout,
-        russh::client::connect(config, addr, handler),
-    )
-    .await
-    .map_err(|_| {
-        let message = format!(
-            "Failed to connect: timed out after {} seconds",
-            connect_timeout.as_secs()
-        );
-        let _ = emit_connection_state(
-            app,
-            connection_id,
-            server_id,
-            None,
-            ConnectionState::Error(message.clone()),
-        );
-        message
-    })?
-    .map_err(|e| {
-        let _ = emit_connection_state(
-            app,
-            connection_id,
-            server_id,
-            None,
-            ConnectionState::Error(format!("Failed to connect: {}", e)),
-        );
-        format!("Failed to connect: {}", e)
-    })?;
 
-    match auth {
-        AuthMethod::SecretRef { secret_id, kind } => match kind {
-            SecretKind::Password => {
-                let password = get_secret(app, secret_id)?;
-                let auth_result = session
-                    .authenticate_password(user, &password)
-                    .await
-                    .map_err(|e| {
-                        let _ = emit_connection_state(
-                            app,
-                            connection_id,
-                            server_id,
-                            None,
-                            ConnectionState::Error(format!("Authentication failed: {}", e)),
-                        );
-                        format!("Authentication failed: {}", e)
-                    })?;
-
-                if !auth_result {
-                    let _ = emit_connection_state(
-                        app,
-                        connection_id,
-                        server_id,
-                        None,
-                        ConnectionState::Error("Password authentication failed".to_string()),
-                    );
-                    return Err("Password authentication failed".to_string());
-                }
-
-                #[cfg(debug_assertions)]
-                debug!(user, "Authenticated with secret ref (password)");
-            }
-            SecretKind::PrivateKey => {
-                let key_data = get_secret(app, secret_id)?;
-                let key_pair = keys::decode_secret_key(&key_data, None).map_err(|e| {
-                    let _ = emit_connection_state(
-                        app,
-                        connection_id,
-                        server_id,
-                        None,
-                        ConnectionState::Error(format!("Failed to decode private key: {}", e)),
-                    );
-                    format!("Failed to decode private key: {}", e)
-                })?;
-
-                let auth_result = session
-                    .authenticate_publickey(user, Arc::new(key_pair))
-                    .await
-                    .map_err(|e| {
-                        let _ = emit_connection_state(
-                            app,
-                            connection_id,
-                            server_id,
-                            None,
-                            ConnectionState::Error(format!("Key authentication failed: {}", e)),
-                        );
-                        format!("Key authentication failed: {}", e)
-                    })?;
-
-                if !auth_result {
-                    let _ = emit_connection_state(
-                        app,
-                        connection_id,
-                        server_id,
-                        None,
-                        ConnectionState::Error("Key authentication failed".to_string()),
-                    );
-                    return Err("Key authentication failed".to_string());
-                }
-
-                #[cfg(debug_assertions)]
-                debug!(user, "Authenticated with secret ref (key)");
-            }
-        },
-        AuthMethod::Password { password } => {
-            #[cfg(debug_assertions)]
-            debug!(user, "Authenticating with password");
-
-            let auth_result = session
-                .authenticate_password(user, password)
-                .await
-                .map_err(|e| {
-                    let _ = emit_connection_state(
-                        app,
-                        connection_id,
-                        server_id,
-                        None,
-                        ConnectionState::Error(format!("Authentication failed: {}", e)),
-                    );
-                    format!("Authentication failed: {}", e)
-                })?;
-
-            if !auth_result {
-                let _ = emit_connection_state(
-                    app,
-                    connection_id,
-                    server_id,
-                    None,
-                    ConnectionState::Error("Password authentication failed".to_string()),
-                );
-                return Err("Password authentication failed".to_string());
-            }
-
-            #[cfg(debug_assertions)]
-            debug!("Password authentication successful");
-        }
-        AuthMethod::Key { private_key } => {
-            #[cfg(debug_assertions)]
-            debug!(user, "Authenticating with key");
-
-            let key_pair = keys::decode_secret_key(private_key, None).map_err(|e| {
-                let _ = emit_connection_state(
-                    app,
-                    connection_id,
-                    server_id,
-                    None,
-                    ConnectionState::Error(format!("Failed to decode private key: {}", e)),
-                );
-                format!("Failed to decode private key: {}", e)
-            })?;
-
-            let auth_result = session
-                .authenticate_publickey(user, Arc::new(key_pair))
-                .await
-                .map_err(|e| {
-                    let _ = emit_connection_state(
-                        app,
-                        connection_id,
-                        server_id,
-                        None,
-                        ConnectionState::Error(format!("Key authentication failed: {}", e)),
-                    );
-                    format!("Key authentication failed: {}", e)
-                })?;
-
-            if !auth_result {
-                let _ = emit_connection_state(
-                    app,
-                    connection_id,
-                    server_id,
-                    None,
-                    ConnectionState::Error("Key authentication failed".to_string()),
-                );
-                return Err("Key authentication failed".to_string());
-            }
-
-            #[cfg(debug_assertions)]
-            debug!("Key authentication successful");
-        }
-    }
+    let session = ssh_thing_core::ssh::connect(handler, host, port, user, auth, timeout_seconds)
+        .await
+        .inspect_err(|error| {
+            let _ = emit_connection_state(
+                app,
+                connection_id,
+                server_id,
+                None,
+                ConnectionState::Error(error.clone()),
+            );
+        })?;
 
     #[cfg(debug_assertions)]
     info!(host, port, user, "SSH connection established successfully");
@@ -1176,18 +811,12 @@ pub async fn disconnect_ssh(
     connection_id: Option<&str>,
     server_id: Option<&str>,
 ) -> Result<(), String> {
-    if let Some(s) = session {
-        let disconnect_result = timeout(
-            Duration::from_secs(2),
-            s.disconnect(russh::Disconnect::ByApplication, "disconnected", "en"),
-        )
-        .await;
-
-        if disconnect_result.is_err() {
-            #[cfg(debug_assertions)]
-            debug!(server_id = server_id, "SSH disconnect timed out");
-        }
+    if let Some(session) = session {
+        #[cfg(debug_assertions)]
+        debug!(server_id = server_id, "Closing SSH session");
+        ssh_thing_core::ssh::disconnect_quiet(session).await;
     }
+
     emit_connection_state(
         app,
         connection_id,
@@ -1392,107 +1021,14 @@ pub async fn open_pty_shell(
     Ok(shell)
 }
 
-fn get_servers_path(app_dir: &Path) -> PathBuf {
-    app_dir.join(SERVERS_FILE)
-}
-
-fn get_known_hosts_path(app_dir: &Path) -> PathBuf {
-    app_dir.join(KNOWN_HOSTS_FILE)
-}
-
 pub(crate) fn get_app_dir(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_data_dir()
         .map_err(|e| format!("Failed to get app data directory: {}", e))
 }
 
-fn load_known_hosts(app_dir: &Path) -> Result<Vec<KnownHost>, String> {
-    let path = get_known_hosts_path(app_dir);
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-    let content =
-        fs::read_to_string(&path).map_err(|e| format!("Failed to read known hosts file: {}", e))?;
-    serde_json::from_str(&content).map_err(|e| format!("Failed to parse known hosts file: {}", e))
-}
-
-fn save_known_hosts(app_dir: &Path, hosts: &[KnownHost]) -> Result<(), String> {
-    let path = get_known_hosts_path(app_dir);
-    let parent = path
-        .parent()
-        .ok_or_else(|| "Invalid path for known hosts file".to_string())?;
-    fs::create_dir_all(parent)
-        .map_err(|e| format!("Failed to create app data directory: {}", e))?;
-    let content = serde_json::to_string_pretty(hosts)
-        .map_err(|e| format!("Failed to serialize known hosts: {}", e))?;
-    fs::write(&path, content).map_err(|e| format!("Failed to write known hosts file: {}", e))?;
-    Ok(())
-}
-
-pub(crate) fn parse_json_array_lenient<T>(data: &str, label: &str) -> Result<Vec<T>, String>
-where
-    T: DeserializeOwned,
-{
-    match serde_json::from_str::<Vec<T>>(data) {
-        Ok(items) => Ok(items),
-        Err(primary_error) => {
-            let raw_items: Vec<serde_json::Value> = serde_json::from_str(data)
-                .map_err(|e| format!("Failed to parse {} file: {}", label, e))?;
-            let mut parsed = Vec::new();
-            let mut skipped = 0usize;
-            for item in raw_items {
-                match serde_json::from_value::<T>(item) {
-                    Ok(entry) => parsed.push(entry),
-                    Err(_) => skipped += 1,
-                }
-            }
-            if parsed.is_empty() {
-                Err(format!("Failed to parse {} file: {}", label, primary_error))
-            } else {
-                if skipped > 0 {
-                    debug!(
-                        label,
-                        skipped, "Skipped malformed records while loading data"
-                    );
-                }
-                Ok(parsed)
-            }
-        }
-    }
-}
-
-pub(crate) fn load_servers(
-    app_dir: &Path,
-    app: &AppHandle,
-) -> Result<Vec<ServerConnection>, String> {
-    let path = get_servers_path(app_dir);
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-    let data =
-        fs::read_to_string(&path).map_err(|e| format!("Failed to read servers file: {}", e))?;
-    let mut servers: Vec<ServerConnection> = parse_json_array_lenient(&data, "servers")?;
-
-    // Migrate any plaintext secrets into keyring
-    let mut changed = false;
-    for server in servers.iter_mut() {
-        if let AuthMethod::SecretRef { .. } = server.auth {
-            continue;
-        }
-        migrate_server_auth(app, server)?;
-        changed = true;
-    }
-
-    if changed {
-        save_servers(app_dir, &servers)?;
-    }
-
-    Ok(servers)
-}
-
 #[tauri::command]
 async fn upsert_secret(
-    app: AppHandle,
     secret_id: Option<String>,
     secret: String,
     kind: SecretKind,
@@ -1500,7 +1036,7 @@ async fn upsert_secret(
     // kind is included for future use (password vs key) even though keyring storage is the same
     let _ = kind;
     let id = secret_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    put_secret(&app, &id, &secret)?;
+    ssh_thing_core::put_secret(&id, &secret)?;
     // storing kind is implicit in the calling AuthMethod
     Ok(id)
 }
@@ -1511,18 +1047,18 @@ async fn add_server(
     server: ServerConnection,
 ) -> Result<Vec<ServerConnection>, String> {
     let app_dir = get_app_dir(&app)?;
-    let mut servers = load_servers(&app_dir, &app)?;
+    let mut servers = core_store::load_servers_migrated(&app_dir)?;
     let mut server = server;
-    migrate_server_auth(&app, &mut server)?;
+    core_store::migrate_server_auth(&mut server)?;
     servers.push(server);
-    save_servers(&app_dir, &servers)?;
+    core_store::save_servers(&app_dir, &servers)?;
     Ok(servers)
 }
 
 #[tauri::command]
 async fn duplicate_server(app: AppHandle, id: String) -> Result<Vec<ServerConnection>, String> {
     let app_dir = get_app_dir(&app)?;
-    let mut servers = load_servers(&app_dir, &app)?;
+    let mut servers = core_store::load_servers_migrated(&app_dir)?;
     let source = servers
         .iter()
         .find(|server| server.id == id)
@@ -1539,11 +1075,11 @@ async fn duplicate_server(app: AppHandle, id: String) -> Result<Vec<ServerConnec
 
     if let AuthMethod::SecretRef { kind, .. } = &source.auth {
         let secret = match &source.auth {
-            AuthMethod::SecretRef { secret_id, .. } => get_secret(&app, secret_id)?,
+            AuthMethod::SecretRef { secret_id, .. } => ssh_thing_core::get_secret(secret_id)?,
             _ => unreachable!(),
         };
         let new_secret_id = format!("server:{}:{}", duplicate.id, uuid::Uuid::new_v4());
-        put_secret(&app, &new_secret_id, &secret)?;
+        ssh_thing_core::put_secret(&new_secret_id, &secret)?;
         duplicate.auth = AuthMethod::SecretRef {
             secret_id: new_secret_id,
             kind: kind.clone(),
@@ -1551,40 +1087,40 @@ async fn duplicate_server(app: AppHandle, id: String) -> Result<Vec<ServerConnec
     }
 
     servers.push(duplicate);
-    save_servers(&app_dir, &servers)?;
+    core_store::save_servers(&app_dir, &servers)?;
     Ok(servers)
 }
 
 #[tauri::command]
 async fn delete_server(app: AppHandle, id: String) -> Result<Vec<ServerConnection>, String> {
     let app_dir = get_app_dir(&app)?;
-    let mut servers = load_servers(&app_dir, &app)?;
+    let mut servers = core_store::load_servers_migrated(&app_dir)?;
     let index = servers
         .iter()
         .position(|s| s.id == id)
         .ok_or_else(|| format!("Server with id {} not found", id))?;
 
     if let AuthMethod::SecretRef { secret_id, .. } = &servers[index].auth {
-        let _ = delete_secret(&app, secret_id);
+        let _ = ssh_thing_core::delete_secret(secret_id);
     }
 
     servers.remove(index);
-    save_servers(&app_dir, &servers)?;
+    core_store::save_servers(&app_dir, &servers)?;
     Ok(servers)
 }
 
 #[tauri::command]
 async fn get_snippets(app: AppHandle) -> Result<Vec<Snippet>, String> {
     let app_dir = get_app_dir(&app)?;
-    load_snippets(&app_dir)
+    core_store::load_snippets(&app_dir)
 }
 
 #[tauri::command]
 async fn add_snippet(app: AppHandle, snippet: Snippet) -> Result<Vec<Snippet>, String> {
     let app_dir = get_app_dir(&app)?;
-    let mut snippets = load_snippets(&app_dir)?;
+    let mut snippets = core_store::load_snippets(&app_dir)?;
     snippets.push(snippet);
-    save_snippets(&app_dir, &snippets)?;
+    core_store::save_snippets(&app_dir, &snippets)?;
     Ok(snippets)
 }
 
@@ -1595,34 +1131,34 @@ async fn update_snippet(
     snippet: Snippet,
 ) -> Result<Vec<Snippet>, String> {
     let app_dir = get_app_dir(&app)?;
-    let mut snippets = load_snippets(&app_dir)?;
+    let mut snippets = core_store::load_snippets(&app_dir)?;
     let index = snippets
         .iter()
         .position(|s| s.id == id)
         .ok_or_else(|| format!("Snippet with id {} not found", id))?;
     snippets[index] = snippet;
-    save_snippets(&app_dir, &snippets)?;
+    core_store::save_snippets(&app_dir, &snippets)?;
     Ok(snippets)
 }
 
 #[tauri::command]
 async fn delete_snippet(app: AppHandle, id: String) -> Result<Vec<Snippet>, String> {
     let app_dir = get_app_dir(&app)?;
-    let mut snippets = load_snippets(&app_dir)?;
+    let mut snippets = core_store::load_snippets(&app_dir)?;
     let index = snippets
         .iter()
         .position(|s| s.id == id)
         .ok_or_else(|| format!("Snippet with id {} not found", id))?;
     snippets.remove(index);
-    save_snippets(&app_dir, &snippets)?;
+    core_store::save_snippets(&app_dir, &snippets)?;
     Ok(snippets)
 }
 
 #[tauri::command]
 async fn export_data(app: AppHandle) -> Result<String, String> {
     let app_dir = get_app_dir(&app)?;
-    let snippets = load_snippets(&app_dir)?;
-    let actions = crate::actions::load_actions(&app_dir)?;
+    let snippets = core_store::load_snippets(&app_dir)?;
+    let actions = core_store::load_actions(&app_dir)?;
     let export = ExportData {
         version: "1.0".to_string(),
         exported_at: std::time::SystemTime::now()
@@ -1640,8 +1176,8 @@ async fn import_data(app: AppHandle, data: String) -> Result<ImportResult, Strin
     let export: ExportData =
         serde_json::from_str(&data).map_err(|e| format!("Failed to parse import data: {}", e))?;
     let app_dir = get_app_dir(&app)?;
-    let existing_snippets = load_snippets(&app_dir)?;
-    let existing_actions = crate::actions::load_actions(&app_dir)?;
+    let existing_snippets = core_store::load_snippets(&app_dir)?;
+    let existing_actions = core_store::load_actions(&app_dir)?;
     let existing_snippet_ids: std::collections::HashSet<_> =
         existing_snippets.iter().map(|s| s.id.clone()).collect();
     let existing_action_ids: std::collections::HashSet<_> =
@@ -1668,8 +1204,8 @@ async fn import_data(app: AppHandle, data: String) -> Result<ImportResult, Strin
             actions_imported += 1;
         }
     }
-    save_snippets(&app_dir, &new_snippets)?;
-    crate::actions::save_actions(&app_dir, &new_actions)?;
+    core_store::save_snippets(&app_dir, &new_snippets)?;
+    core_store::save_actions(&app_dir, &new_actions)?;
     Ok(ImportResult {
         snippets_imported,
         snippets_skipped,
@@ -1698,7 +1234,7 @@ async fn connect(
     )
     .await?;
     let app_dir = get_app_dir(&app)?;
-    let mut persisted_servers = load_servers(&app_dir, &app)?;
+    let mut persisted_servers = core_store::load_servers_migrated(&app_dir)?;
     if let Some(existing) = persisted_servers
         .iter_mut()
         .find(|entry| entry.id == server.id)
@@ -1712,7 +1248,7 @@ async fn connect(
         if existing.timeout_seconds.is_none() && server.timeout_seconds.is_some() {
             existing.timeout_seconds = server.timeout_seconds;
         }
-        save_servers(&app_dir, &persisted_servers)?;
+        core_store::save_servers(&app_dir, &persisted_servers)?;
     }
     let state = app.state::<AppState>();
 
@@ -1840,6 +1376,24 @@ async fn resize(app: AppHandle, shell_id: String, width: u32, height: u32) -> Re
         .map_err(|e| format!("Failed to resize shell: {}", e))
 }
 
+#[tauri::command]
+async fn get_automation_settings(app: AppHandle) -> Result<AutomationSettings, String> {
+    let app_dir = get_app_dir(&app)?;
+    AutomationSettings::load(&app_dir)
+}
+
+#[tauri::command]
+async fn set_automation_settings(
+    app: AppHandle,
+    settings: AutomationSettings,
+) -> Result<AutomationSettings, String> {
+    let app_dir = get_app_dir(&app)?;
+    let mut next = settings;
+    next.app_version = Some(app.package_info().version.to_string());
+    next.save(&app_dir)?;
+    Ok(next)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1849,6 +1403,16 @@ pub fn run() {
         .setup(|app| {
             let shortcut = Shortcut::new(Some(Modifiers::META | Modifiers::SHIFT), Code::KeyF);
             let app_handle = app.handle().clone();
+
+            // Record the running version so the CLI can report an app/CLI mismatch
+            // without launching the desktop app.
+            if let Ok(app_dir) = get_app_dir(&app_handle) {
+                let version = app_handle.package_info().version.to_string();
+                if let Err(error) = cli_manager::stamp_app_version(&app_dir, &version) {
+                    debug!(%error, "Could not stamp the app version into settings");
+                }
+            }
+
             app.handle().plugin(
                 tauri_plugin_global_shortcut::Builder::new()
                     .with_handler(move |_app, _shortcut, event| {
@@ -1884,6 +1448,11 @@ pub fn run() {
             delete_action,
             get_action_history,
             execute_action,
+            get_automation_settings,
+            set_automation_settings,
+            cli_status,
+            install_cli,
+            uninstall_cli,
             upsert_secret,
             trust_host_key,
             reject_host_key,

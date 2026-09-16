@@ -1527,6 +1527,119 @@
       .hover\:bg-red-50:hover { background-color: rgb(254 242 242) !important; }
       .dark .dark\:hover\:bg-blue-900\/20:hover { background-color: rgba(59 130 246 / 0.2) !important; }
       .dark .dark\:hover\:bg-red-900\/20:hover { background-color: rgba(239 68 68 / 0.2) !important; }
+
+      /* Automation panel */
+      .automation-toggle-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        cursor: pointer;
+      }
+
+      .automation-toggle-title {
+        display: block;
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+
+      .automation-toggle-hint {
+        display: block;
+        font-size: 0.75rem;
+        line-height: 1.4;
+        margin-top: 0.15rem;
+        color: var(--text-secondary);
+      }
+
+      .automation-switch {
+        appearance: none;
+        flex: 0 0 auto;
+        width: 2.75rem;
+        height: 1.5rem;
+        margin-top: 0.15rem;
+        border-radius: 999px;
+        background: var(--surface-1);
+        border: 1px solid var(--border-color);
+        position: relative;
+        cursor: pointer;
+        transition: background var(--transition-fast), border-color var(--transition-fast);
+      }
+
+      .automation-switch::after {
+        content: "";
+        position: absolute;
+        top: 0.125rem;
+        left: 0.125rem;
+        width: 1.125rem;
+        height: 1.125rem;
+        border-radius: 999px;
+        background: #ffffff;
+        box-shadow: var(--shadow-sm);
+        transition: transform var(--transition-fast);
+      }
+
+      .automation-switch:checked {
+        background: rgba(64, 160, 43, 0.85);
+        border-color: rgba(64, 160, 43, 0.9);
+      }
+
+      .automation-switch:checked::after {
+        transform: translateX(1.25rem);
+      }
+
+      .automation-switch:focus-visible {
+        outline: 2px solid var(--ring-color);
+        outline-offset: 2px;
+      }
+
+      .automation-status {
+        font-size: 0.75rem;
+        line-height: 1.45;
+        color: var(--text-secondary);
+      }
+
+      .automation-status.is-error { color: #d20f39; }
+      .automation-status.is-busy { color: #d97706; }
+
+      .automation-facts {
+        display: grid;
+        gap: 0.35rem;
+        margin-top: 0.5rem;
+      }
+
+      .automation-facts > div {
+        display: flex;
+        gap: 0.75rem;
+      }
+
+      .automation-facts dt {
+        flex: 0 0 6rem;
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+      }
+
+      .automation-facts dd {
+        margin: 0;
+        min-width: 0;
+        word-break: break-all;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.75rem;
+        color: var(--text-primary);
+      }
+
+      .automation-hint {
+        margin-top: 0.6rem;
+        padding: 0.5rem 0.6rem;
+        border-radius: var(--radius-sm);
+        border: 1px solid rgba(217, 119, 6, 0.3);
+        background: rgba(217, 119, 6, 0.1);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.6875rem;
+        line-height: 1.5;
+        color: var(--text-primary);
+        word-break: break-all;
+      }
     </style>
   </head>
 
@@ -1651,6 +1764,15 @@
                       <span class="header-menu-item-copy">
                         <span class="header-menu-item-title">About</span>
                         <span class="header-menu-item-subtitle">Version and project links</span>
+                      </span>
+                    </span>
+                  </button>
+                  <button id="automation-btn" class="header-menu-item" role="menuitem" title="Automation and CLI">
+                    <span class="header-menu-item-main">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l-3 3 3 3m8-6l3 3-3 3M13 5l-2 14"/></svg>
+                      <span class="header-menu-item-copy">
+                        <span class="header-menu-item-title">Automation</span>
+                        <span class="header-menu-item-subtitle">CLI access for agents</span>
                       </span>
                     </span>
                   </button>
@@ -1962,6 +2084,11 @@
                 <input type="text" id="snippet-name" required autocorrect="off" autocapitalize="off" spellcheck="false" class="form-input" placeholder="My Command" />
               </div>
               <div>
+                <label class="form-label" for="snippet-server">Server</label>
+                <select id="snippet-server" class="form-select" aria-describedby="snippet-server-help"></select>
+                <p id="snippet-server-help" class="text-xs text-gray-500 dark:text-gray-400 mt-1">Scoped snippets connect to this server automatically before running. Leave empty to run in the active session.</p>
+              </div>
+              <div>
                 <label class="form-label" for="snippet-command">Command <span class="text-red-400">*</span></label>
                 <textarea id="snippet-command" rows="3" required autocorrect="off" autocapitalize="off" spellcheck="false" class="form-input font-mono text-xs" placeholder="ls -la"></textarea>
               </div>
@@ -2118,6 +2245,47 @@
         </div>
         <div class="px-5 py-4 flex justify-end gap-2 border-t border-gray-200/70 dark:border-gray-700/70">
           <button type="button" id="about-close-btn" class="ghost-btn">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="automation-modal" class="hidden fixed inset-0 modal-backdrop z-50" role="dialog" aria-modal="true" aria-labelledby="automation-title" aria-describedby="automation-description">
+      <div class="modal-content modal-panel w-[34rem] max-w-full mx-4 overflow-hidden">
+        <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 id="automation-title" class="text-lg font-semibold text-gray-800 dark:text-gray-100">Automation</h3>
+          <p id="automation-description" class="text-sm text-gray-600 dark:text-gray-400 mt-1">Let local agents run your snippets through the ssh-thing CLI. Only snippets you scope to a server can be run, and secret values are never exposed.</p>
+        </div>
+
+        <div class="modal-section space-y-3">
+          <label class="automation-toggle-row" for="automation-enabled">
+            <span class="min-w-0">
+              <span class="automation-toggle-title">Allow external automation</span>
+              <span class="automation-toggle-hint">When off, the CLI can list servers and snippets but refuses to run anything.</span>
+            </span>
+            <input type="checkbox" id="automation-enabled" class="automation-switch" role="switch" aria-describedby="automation-status" />
+          </label>
+          <p id="automation-status" class="automation-status" role="status" aria-live="polite">Loading…</p>
+        </div>
+
+        <div class="modal-section">
+          <div class="modal-section-title">Command line tool</div>
+          <dl class="automation-facts">
+            <div><dt>Status</dt><dd id="cli-status-value">—</dd></div>
+            <div><dt>Version</dt><dd id="cli-version-value">—</dd></div>
+            <div><dt>Path</dt><dd id="cli-path-value">—</dd></div>
+            <div><dt>Platform</dt><dd id="cli-platform-value">—</dd></div>
+          </dl>
+          <p id="cli-path-hint" class="automation-hint hidden"></p>
+          <div class="flex flex-wrap gap-2 mt-3">
+            <button type="button" id="cli-install-btn" class="ghost-btn ghost-btn-primary">Install CLI</button>
+            <button type="button" id="cli-uninstall-btn" class="ghost-btn ghost-btn-danger hidden">Uninstall CLI</button>
+            <button type="button" id="cli-refresh-btn" class="ghost-btn">Refresh</button>
+            <button type="button" id="automation-detail-btn" class="ghost-btn">Details</button>
+          </div>
+        </div>
+
+        <div class="px-5 py-4 flex justify-end gap-2 border-t border-gray-200/70 dark:border-gray-700/70">
+          <button type="button" id="automation-close-btn" class="ghost-btn">Close</button>
         </div>
       </div>
     </div>

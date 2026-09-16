@@ -1,5 +1,6 @@
 import { initAboutModal } from "./components/about-modal.js";
 import { initActionManager } from "./components/actions-manager.js";
+import { initAutomationManager } from "./components/automation-manager.js";
 import { initHeaderMenu } from "./components/header-menu.js";
 import { createSessionManager } from "./components/session-manager.js";
 import { renderServerList as renderServerCards } from "./components/server-list.js";
@@ -270,6 +271,8 @@ async function loadServers() {
   try {
     servers = await invoke("get_servers");
     renderServerList();
+    renderSnippetList();
+    syncSnippetServerSelect();
     actionManager?.renderActions();
     actionManager?.refreshServerOptionsIfOpen();
   } catch (error) {
@@ -434,8 +437,11 @@ async function saveServer(e) {
       : null;
 
     if (passwordValue) {
+      // Tauri maps Rust `secret_id` to the IPC key `secretId`. Sending
+      // snake_case here silently fell back to "generate a new id", orphaning the
+      // previous keychain entry on every password/key edit.
       const secret_id = await invoke("upsert_secret", {
-        secret_id: existingSecretId ?? null,
+        secretId: existingSecretId ?? null,
         secret: passwordValue,
         kind: "Password",
       });
@@ -457,8 +463,11 @@ async function saveServer(e) {
       : null;
 
     if (keyValue) {
+      // Tauri maps Rust `secret_id` to the IPC key `secretId`. Sending
+      // snake_case here silently fell back to "generate a new id", orphaning the
+      // previous keychain entry on every password/key edit.
       const secret_id = await invoke("upsert_secret", {
-        secret_id: existingSecretId ?? null,
+        secretId: existingSecretId ?? null,
         secret: keyValue,
         kind: "PrivateKey",
       });
@@ -558,12 +567,17 @@ function renderSnippetList() {
     const safeSnippetName = escapeHtml(snippet.name);
     const safeDisplayCommand = escapeHtml(displayCommand);
     const safeSnippetCommand = escapeHtml(snippet.command);
+    const safeSnippetServer = escapeHtml(getSnippetServerLabel(snippet.server_id));
+    const runLabel = snippet.server_id
+      ? `Run ${snippet.name} on ${getSnippetServerLabel(snippet.server_id)}`
+      : `Run ${snippet.name} in the active terminal`;
     
     div.innerHTML = `
       <div class="snippet-card-main card-main">
         <div class="snippet-mark" aria-hidden="true"></div>
         <div class="snippet-card-copy">
           <div class="server-card-name truncate" title="${safeSnippetName}">${safeSnippetName}</div>
+          <div class="server-card-subtitle truncate" title="${safeSnippetServer}">${safeSnippetServer}</div>
           <div class="snippet-command-preview truncate" title="${safeSnippetCommand}">${safeDisplayCommand}${hasMore ? ' <span class="snippet-command-more">+more</span>' : ''}</div>
         </div>
       </div>
@@ -576,7 +590,7 @@ function renderSnippetList() {
           <svg class="server-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
         </button>
         </div>
-        <button class="ghost-btn ghost-btn-primary card-primary-action snippet-run-btn" data-id="${safeSnippetId}" aria-label="Run ${safeSnippetName} in the active terminal">
+        <button class="ghost-btn ghost-btn-primary card-primary-action snippet-run-btn" data-id="${safeSnippetId}" aria-label="${escapeHtml(runLabel)}">
         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
           Run
       </button>
@@ -590,7 +604,7 @@ function renderSnippetList() {
     const runBtn = div.querySelector('.snippet-run-btn');
     div.querySelector(".snippet-edit-btn")?.setAttribute("aria-label", `Edit ${snippet.name}`);
     div.querySelector(".snippet-delete-btn")?.setAttribute("aria-label", `Delete ${snippet.name}`);
-    runBtn?.setAttribute("aria-label", `Run ${snippet.name} in the active terminal`);
+    runBtn?.setAttribute("aria-label", runLabel);
     
     div.addEventListener('mouseleave', () => {
       tooltip.classList.add('hidden');
@@ -610,22 +624,78 @@ function renderSnippetList() {
   });
 }
 
-async function executeSnippet(snippet) {
-  const session = getActiveSession();
-  if (!session || !session.shellId || !session.term) {
-    showAlert("No Active Session", "Please connect to a server before running a snippet.", "warning");
-    return;
-  }
+function getSnippetServerLabel(serverId) {
+  if (!serverId) return "Global · runs in active session";
+  const server = servers.find((item) => item.id === serverId);
+  if (!server) return "Missing server · reassign before running";
+  const nickname = server.nickname?.trim();
+  return nickname || `${server.user}@${server.host}:${server.port}`;
+}
 
+function buildSnippetServerOptions(selectedServerId) {
+  const options = ['<option value="">No server · runs in active session</option>'];
+  for (const server of servers) {
+    const nickname = server.nickname?.trim();
+    const label = nickname
+      ? `${nickname} (${server.user}@${server.host})`
+      : `${server.user}@${server.host}:${server.port}`;
+    const selected = server.id === selectedServerId ? " selected" : "";
+    options.push(`<option value="${escapeHtml(server.id)}"${selected}>${escapeHtml(label)}</option>`);
+  }
+  return options.join("");
+}
+
+function syncSnippetServerSelect() {
+  const snippetServer = document.getElementById("snippet-server");
+  if (!snippetServer || document.getElementById("snippet-modal")?.classList.contains("hidden")) return;
+  const currentValue = snippetServer.value;
+  snippetServer.innerHTML = buildSnippetServerOptions(currentValue);
+}
+
+async function sendSnippetToSession(session, snippet) {
   session.term.writeln(`\r\n\x1b[1;33mRunning snippet: ${snippet.name}\x1b[0m\r\n`);
+  const snippetCard = document.querySelector(`.snippet-item[data-id="${snippet.id}"]`);
+  snippetCard?.classList.add("status-connected");
+  showToast(`Running snippet: ${snippet.name}`, "info");
   try {
-    const snippetCard = document.querySelector(`.snippet-item[data-id="${snippet.id}"]`);
-    snippetCard?.classList.add("status-connected");
-    showToast(`Running snippet: ${snippet.name}`, "info");
     await invoke("send_input", { shellId: session.shellId, input: snippet.command + "\n" });
+  } finally {
     setTimeout(() => {
       snippetCard?.classList.remove("status-connected");
     }, 1200);
+  }
+}
+
+async function executeSnippet(snippet) {
+  try {
+    // A scoped snippet always targets its own server: reuse its live session
+    // when available, otherwise connect first and then run the command there.
+    if (snippet.server_id) {
+      const server = servers.find((item) => item.id === snippet.server_id);
+      if (!server) {
+        showAlert(
+          "Server Missing",
+          `"${snippet.name}" is assigned to a server that no longer exists. Edit the snippet to choose another server.`,
+          "warning",
+        );
+        openSnippetEditModal(snippet.id);
+        return;
+      }
+      const session = await sessionManager?.ensureConnectedSessionForServer(server.id);
+      if (!session || !session.shellId || !session.term) {
+        return;
+      }
+      await sendSnippetToSession(session, snippet);
+      return;
+    }
+
+    // Legacy/global snippets keep the old behavior: run in the active session.
+    const session = getActiveSession();
+    if (!session || !session.shellId || !session.term) {
+      showAlert("No Active Session", "Please connect to a server before running a snippet.", "warning");
+      return;
+    }
+    await sendSnippetToSession(session, snippet);
   } catch (error) {
     console.error("Failed to run snippet:", error);
     showAlert("Snippet Error", `${snippet.name} failed: ${error}`);
@@ -637,6 +707,7 @@ function openSnippetModal() {
   document.getElementById("snippet-modal-title").textContent = "Add Snippet";
   document.getElementById("snippet-form").reset();
   document.getElementById("snippet-id").value = "";
+  document.getElementById("snippet-server").innerHTML = buildSnippetServerOptions("");
   requestAnimationFrame(() => document.getElementById("snippet-name")?.focus());
 }
 
@@ -757,6 +828,7 @@ function openSnippetEditModal(id) {
   document.getElementById("snippet-name").value = snippet.name;
   document.getElementById("snippet-command").value = snippet.command;
   document.getElementById("snippet-description").value = snippet.description || "";
+  document.getElementById("snippet-server").innerHTML = buildSnippetServerOptions(snippet.server_id || "");
   requestAnimationFrame(() => document.getElementById("snippet-name")?.focus());
 }
 
@@ -764,16 +836,32 @@ async function saveSnippet(e) {
   e.preventDefault();
 
   const id = document.getElementById("snippet-id").value || crypto.randomUUID();
-  const name = document.getElementById("snippet-name").value;
+  const name = document.getElementById("snippet-name").value.trim();
   const command = document.getElementById("snippet-command").value;
-  const description = document.getElementById("snippet-description").value;
+  const description = document.getElementById("snippet-description").value.trim();
+  const serverId = document.getElementById("snippet-server")?.value || "";
 
   const snippet = {
     id,
     name,
     command,
     description: description || null,
+    server_id: serverId || null,
   };
+
+  if (!name) {
+    showAlert("Missing Name", "Give the snippet a short name.", "warning");
+    return;
+  }
+  if (!command.trim()) {
+    showAlert("Missing Command", "Enter the command this snippet should run.", "warning");
+    return;
+  }
+  if (serverId && !servers.some((server) => server.id === serverId)) {
+    showAlert("Missing Server", "The selected server no longer exists. Choose another server.", "warning");
+    syncSnippetServerSelect();
+    return;
+  }
 
   try {
     if (document.getElementById("snippet-id").value) {
@@ -1128,6 +1216,7 @@ window.addEventListener("DOMContentLoaded", () => {
       onSessionsChanged: renderServerList,
     });
     initAboutModal().catch((error) => console.error("About modal init failed:", error));
+    initAutomationManager({ invoke, showToast, showAlert });
     disableInputCorrections();
     setupWindowCloseGuard();
     initWindowState();

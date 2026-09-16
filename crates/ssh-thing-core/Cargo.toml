@@ -1,0 +1,16 @@
+[package]
+name = "ssh-thing-core"
+version.workspace = true
+edition.workspace = true
+description = "Shared storage, secret, and SSH execution core for SSH THING"
+publish = false
+
+[dependencies]
+async-trait = "0.1"
+dirs = "6"
+keyring = "2"
+russh = "0.46"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"

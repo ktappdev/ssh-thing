@@ -4,13 +4,22 @@ This file provides guidelines for agentic coding assistants working on the ssh-t
 
 ## Project Overview
 
-ssh-thing is a Tauri-based SSH client application. It uses:
-- **Tauri 2.x** for the desktop app framework
-- **Rust** for the backend (src-tauri/src/)
-- **Vanilla HTML/JavaScript** for the frontend (frontend/)
-- **russh** for SSH connections
-- **tokio** for async runtime
-- **serde** for serialization (JSON and TOML)
+ssh-thing is a Tauri-based SSH client application. It is a cargo workspace
+with three members:
+
+- **`src-tauri`** — the desktop app: Tauri 2.x commands, PTY sessions,
+  PTY/interactive host-key prompts, the installer for the CLI.
+- **`crates/ssh-thing-core`** — shared, Tauri-free code: data models, JSON
+  stores, keyring + env-override secrets, SSH connect, host-key policy, and
+  one-shot command execution. Both binaries depend on it.
+- **`crates/ssh-thing-cli`** — the `ssh-thing` binary: a capability-limited CLI
+  that can only list saved servers/snippets and run a snippet against the server
+  it is scoped to. Gated by the desktop app's `Allow external automation`
+  setting.
+
+Other stack pieces: **Rust** for both binaries, **Vanilla HTML/JavaScript** for
+the frontend (`frontend/`), **russh** for SSH, **tokio** for async,
+**serde** for JSON.
 
 ## Build Commands
 
@@ -33,7 +42,17 @@ npm run tauri build -- --target x86_64-pc-windows-msvc  # Windows
 npm run tauri build -- --target x86_64-unknown-linux-gnu  # Linux
 ```
 
-### Release and GitHub Publishing
+## Docs map
+
+| File | Purpose |
+|---|---|
+| `docs/STATE-OF-WORK.md` | **Entry point.** Live state, uncommitted work, open decisions, traps. |
+| `docs/CLI-FOR-LLMS.md` | Product spec for the LLM CLI. Implemented, unreleased. |
+| `docs/CLI-KNOWLEDGE-BASE.md` | CLI engineering ground truth and implementation record. |
+| `FEATURE_SCOPED_SNIPPETS.md` | Server-scoped snippets implementation record. |
+| `FEATURE_ACTIONS.md` | Original Actions design. Superseded by scoped snippets; Actions still ships. |
+
+## Release and GitHub Publishing
 
 The application version is kept synchronized in `package.json`,
 `package-lock.json`, root `Cargo.toml`, and `src-tauri/tauri.conf.json`. Use the
@@ -58,6 +77,7 @@ Before releasing:
 
    ```bash
    node --check frontend/main.js
+   node --check frontend/components/automation-manager.js
    cargo fmt --all --check
    cargo test --workspace
    cargo clippy --workspace --all-targets -- -D warnings
@@ -77,11 +97,32 @@ Before releasing:
    script creates `Release v<version>` and `v<version>`, then pushes both.
 5. Confirm the GitHub Actions release workflow completes. A pushed `v*` tag
    creates the GitHub Release and builds Linux, Windows, Intel macOS, and
-   Apple Silicon macOS assets. The workflow filters cached assets from older
-   versions before upload and updates the Homebrew cask only after all build
-   jobs succeed. A local Homebrew update may briefly return 404 while those
-   release assets are still being uploaded; wait for the workflow to finish
-   before treating that as a release failure.
+   Apple Silicon macOS desktop bundles, plus the CLI binaries described below.
+   The workflow filters cached assets from older versions before upload and
+   updates the Homebrew cask only after every build job succeeds. A local
+   Homebrew update may briefly return 404 while those release assets are still
+   being uploaded; wait for the workflow to finish before treating that as a
+   release failure.
+
+   The `build-cli` job additionally publishes the LLM CLI. Each artifact is one
+   binary plus its checksum, and the names are load-bearing — the desktop app's
+   `Install CLI` command builds the download URL from them:
+
+   ```text
+   ssh-thing_<version>_macos-aarch64  + .sha256
+   ssh-thing_<version>_macos-x64      + .sha256
+   ssh-thing_<version>_linux-x64      + .sha256
+   ```
+
+   Local equivalent:
+
+   ```bash
+   cargo build --release -p ssh-thing-cli
+   ./target/release/ssh-thing version
+   ```
+
+   If you rename an asset, update `asset_name()` in
+   `src-tauri/src/cli_manager.rs` in the same commit.
 
 After publishing, verify the local handoff:
 
@@ -98,15 +139,29 @@ an existing release tag without investigating the remote state first.
 
 ### Rust Commands
 ```bash
-cargo build                    # Debug build
+cargo build                    # Debug build (whole workspace)
 cargo build --release          # Release build
+cargo build --release -p ssh-thing-cli   # Build just the CLI -> target/release/ssh-thing
 cargo test                     # Run all tests
 cargo test test_name           # Run single test by name
+cargo test -p ssh-thing-core   # Run one crate's tests
 cargo test --lib               # Run lib tests only
 cargo check                    # Check for errors without building
 cargo clippy                   # Run linter
 cargo fmt                      # Format code
 ```
+
+### Running the CLI against fixtures
+
+The CLI reads the same data files the desktop app writes. Point it at a scratch
+directory instead of your real app data:
+
+```bash
+SSH_THING_DATA_DIR=/tmp/ssh-thing-fixture ./target/release/ssh-thing doctor
+```
+
+`SSH_THING_DATA_DIR` relocates the data directory only; secrets still come from
+the OS keychain (or `SSH_THING_SECRET_<SANITIZED_SECRET_ID>`).
 
 ## Code Style Guidelines
 
@@ -195,19 +250,34 @@ struct AppState {
 ## Key Files
 
 ### Rust Backend
-- `src-tauri/src/lib.rs` - Main application logic, commands, SSH handling
+- `src-tauri/src/lib.rs` - Tauri commands, interactive host-key handler, PTY sessions
 - `src-tauri/src/main.rs` - Entry point
-- `src-tauri/build.rs` - Build script
-- `src-tauri/src/actions.rs` - Actions CRUD + execution (563 lines)
+- `src-tauri/src/build.rs`
+- `src-tauri/src/actions.rs` - Actions CRUD + execution (delegates to core)
+- `src-tauri/src/cli_manager.rs` - CLI status, download/verify/install/uninstall
 - `src-tauri/src/osc52.rs` - OSC52 escape sequence parser + clipboard (309 lines)
 - `src-tauri/capabilities/default.json` - Tauri 2.x permissions
 - `src-tauri/tauri.conf.json` - Tauri configuration
+
+### Shared core (`crates/ssh-thing-core`)
+- `src/model.rs` - every on-disk JSON shape, size limits, `DATA_SCHEMA_VERSION`
+- `src/paths.rs` - app-data dir resolution, `SSH_THING_DATA_DIR` override
+- `src/store.rs` - lenient JSON load/save for servers, snippets, actions, history, known hosts
+- `src/secrets.rs` - keyring + `SSH_THING_SECRET_*` override + `probe()` health check
+- `src/settings.rs` - `AutomationSettings` (`allow_external_automation`)
+- `src/ssh.rs` - connect, authenticate, `StrictHostKeyHandler`, `exec_command`
+
+### CLI (`crates/ssh-thing-cli`)
+- `src/main.rs` - clap surface, dispatch, exit codes
+- `src/commands.rs` - servers, snippets, run, history, doctor, version
+- `src/output.rs` - the `{ok, command, error, data}` response envelope
 
 ### Frontend
 - `frontend/index.html` - Main HTML
 - `frontend/main.js` - Frontend JavaScript
 - `frontend/components/session-manager.js` - Terminal sessions, xterm.js, tabs (830 lines)
 - `frontend/components/actions-manager.js` - Actions UI CRUD + execution (493 lines)
+- `frontend/components/automation-manager.js` - Automation toggle + CLI install panel
 - `frontend/components/server-list.js` - Server card rendering (196 lines)
 - `frontend/components/about-modal.js` - About modal component (62 lines)
 - `frontend/components/header-menu.js` - Header dropdown menu (40 lines)
@@ -215,13 +285,14 @@ struct AppState {
 ## Dependencies
 
 ### Rust Crates
+- **ssh-thing-core**: shared models, storage, keyring, SSH (workspace path dep)
 - **russh**: SSH client implementation
 - **tokio**: Async runtime
 - **serde/serde_json**: JSON serialization
-- **toml**: TOML configuration files
 - **uuid**: Generate unique IDs
 - **tauri**: Desktop app framework
-- **keyring**: System keychain credential storage
+- **keyring**: System keychain credential storage (via `ssh-thing-core`)
+- **reqwest / sha2 / hex**: CLI download + checksum verification
 
 ### Frontend
 - **xterm.js**: Terminal emulator

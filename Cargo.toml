@@ -1,5 +1,5 @@
 [workspace]
-members = ["src-tauri"]
+members = ["src-tauri", "crates/ssh-thing-core", "crates/ssh-thing-cli"]
 resolver = "2"
 
 [workspace.package]

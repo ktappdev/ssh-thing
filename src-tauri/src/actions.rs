@@ -1,144 +1,214 @@
-use russh::ChannelMsg;
-use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter};
-use tokio::time::{timeout, Duration};
 use tracing::debug;
 
-use crate::{
-    connect_ssh, disconnect_ssh, get_app_dir, load_servers, parse_json_array_lenient,
-    ServerConnection,
-};
+use crate::ServerConnection;
+use crate::{connect_ssh, get_app_dir, Action, ActionExecutionEvent, ActionHistoryEntry};
+use ssh_thing_core::store as core_store;
+use ssh_thing_core::CommandOutcome;
 
-const ACTIONS_FILE: &str = "actions.json";
-const ACTION_HISTORY_FILE: &str = "action-history.json";
-const MAX_HISTORY_ENTRIES: usize = 250;
-const MAX_OUTPUT_BYTES: usize = 64 * 1024;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Action {
-    pub id: String,
-    pub name: String,
-    #[serde(default)]
-    pub description: Option<String>,
-    pub server_id: String,
-    pub command: String,
-    #[serde(default)]
-    pub timeout_seconds: Option<u64>,
-    #[serde(default)]
-    pub last_executed_at: Option<u64>,
-    #[serde(default)]
-    pub last_execution_status: Option<String>,
+#[tauri::command]
+pub async fn get_actions(app: AppHandle) -> Result<Vec<Action>, String> {
+    let app_dir = get_app_dir(&app)?;
+    core_store::load_actions(&app_dir)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ActionHistoryEntry {
-    pub id: String,
-    pub action_id: String,
-    pub action_name: String,
-    pub server_id: String,
-    pub server_label: String,
-    pub command: String,
-    pub started_at: u64,
-    pub completed_at: u64,
-    pub status: String,
-    #[serde(default)]
-    pub exit_code: Option<u32>,
-    #[serde(default)]
-    pub output: Option<String>,
-    #[serde(default)]
-    pub error: Option<String>,
+#[tauri::command]
+pub async fn add_action(app: AppHandle, action: Action) -> Result<Vec<Action>, String> {
+    let app_dir = get_app_dir(&app)?;
+    let mut actions = core_store::load_actions(&app_dir)?;
+    actions.push(action);
+    core_store::save_actions(&app_dir, &actions)?;
+    Ok(actions)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ActionExecutionEvent {
-    pub action_id: String,
-    pub action_name: String,
-    pub status: String,
-    pub message: String,
-    #[serde(default)]
-    pub entry: Option<ActionHistoryEntry>,
+#[tauri::command]
+pub async fn update_action(
+    app: AppHandle,
+    id: String,
+    action: Action,
+) -> Result<Vec<Action>, String> {
+    let app_dir = get_app_dir(&app)?;
+    let mut actions = core_store::load_actions(&app_dir)?;
+    let index = actions
+        .iter()
+        .position(|item| item.id == id)
+        .ok_or_else(|| format!("Action with id {} not found", id))?;
+    actions[index] = action;
+    core_store::save_actions(&app_dir, &actions)?;
+    Ok(actions)
 }
 
-#[derive(Debug)]
-struct ActionCommandOutcome {
-    output: String,
-    exit_code: Option<u32>,
+#[tauri::command]
+pub async fn delete_action(app: AppHandle, id: String) -> Result<Vec<Action>, String> {
+    let app_dir = get_app_dir(&app)?;
+    let mut actions = core_store::load_actions(&app_dir)?;
+    let index = actions
+        .iter()
+        .position(|item| item.id == id)
+        .ok_or_else(|| format!("Action with id {} not found", id))?;
+    actions.remove(index);
+    core_store::save_actions(&app_dir, &actions)?;
+
+    let history = core_store::load_action_history(&app_dir)?;
+    let filtered: Vec<ActionHistoryEntry> = history
+        .into_iter()
+        .filter(|entry| entry.action_id != id)
+        .collect();
+    core_store::save_action_history(&app_dir, &filtered)?;
+
+    Ok(actions)
 }
 
-fn unix_timestamp_now() -> Result<u64, String> {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|e| format!("Time error: {}", e))
-        .map(|duration| duration.as_secs())
-}
+#[tauri::command]
+pub async fn get_action_history(
+    app: AppHandle,
+    action_id: Option<String>,
+) -> Result<Vec<ActionHistoryEntry>, String> {
+    let app_dir = get_app_dir(&app)?;
+    let mut history = core_store::load_action_history(&app_dir)?;
+    history.sort_by_key(|entry| std::cmp::Reverse(entry.completed_at));
 
-fn get_actions_path(app_dir: &Path) -> PathBuf {
-    app_dir.join(ACTIONS_FILE)
-}
-
-fn get_action_history_path(app_dir: &Path) -> PathBuf {
-    app_dir.join(ACTION_HISTORY_FILE)
-}
-
-pub fn load_actions(app_dir: &Path) -> Result<Vec<Action>, String> {
-    let path = get_actions_path(app_dir);
-    if !path.exists() {
-        return Ok(Vec::new());
+    if let Some(target_id) = action_id {
+        history.retain(|entry| entry.action_id == target_id);
     }
 
-    let data =
-        fs::read_to_string(&path).map_err(|e| format!("Failed to read actions file: {}", e))?;
-    parse_json_array_lenient(&data, "actions")
+    Ok(history)
 }
 
-pub fn save_actions(app_dir: &Path, actions: &[Action]) -> Result<(), String> {
-    let path = get_actions_path(app_dir);
-    let parent = path
-        .parent()
-        .ok_or_else(|| "Invalid path for actions file".to_string())?;
-    fs::create_dir_all(parent)
-        .map_err(|e| format!("Failed to create app data directory: {}", e))?;
-    let content = serde_json::to_string_pretty(actions)
-        .map_err(|e| format!("Failed to serialize actions: {}", e))?;
-    fs::write(&path, content).map_err(|e| format!("Failed to write actions file: {}", e))?;
-    Ok(())
-}
+#[tauri::command]
+pub async fn execute_action(
+    app: AppHandle,
+    action_id: String,
+) -> Result<ActionHistoryEntry, String> {
+    let app_dir = get_app_dir(&app)?;
+    let mut actions = core_store::load_actions(&app_dir)?;
+    let action = actions
+        .iter()
+        .find(|item| item.id == action_id)
+        .cloned()
+        .ok_or_else(|| format!("Action with id {} not found", action_id))?;
+    let servers = core_store::load_servers_migrated(&app_dir)?;
+    let server = servers
+        .iter()
+        .find(|item| item.id == action.server_id)
+        .cloned()
+        .ok_or_else(|| {
+            format!(
+                "Server with id {} not found for action {}",
+                action.server_id, action.name
+            )
+        })?;
+    let started_at = core_store::unix_timestamp_now()?;
 
-fn load_action_history(app_dir: &Path) -> Result<Vec<ActionHistoryEntry>, String> {
-    let path = get_action_history_path(app_dir);
-    if !path.exists() {
-        return Ok(Vec::new());
+    emit_action_event(
+        &app,
+        &action.id,
+        &action.name,
+        "connecting",
+        format!("Connecting to {}", server.label()),
+        None,
+    );
+
+    debug!(action_id = %action.id, server_id = %server.id, "Executing action");
+
+    match run_action_command(&app, &action, &server).await {
+        Ok(outcome) => {
+            let completed_at = core_store::unix_timestamp_now()?;
+            let (status, error) = match outcome.exit_code {
+                Some(0) => ("success", None),
+                Some(code) => (
+                    "error",
+                    Some(format!("Command exited with status {}", code)),
+                ),
+                None => {
+                    if outcome.output.is_empty() {
+                        ("error", Some("Command produced no output and returned no exit status — the command may have failed to start or the SSH server closed the channel abnormally.".to_string()))
+                    } else {
+                        (
+                            "error",
+                            Some("Command completed without an exit status".to_string()),
+                        )
+                    }
+                }
+            };
+            let entry = ActionHistoryEntry {
+                id: uuid::Uuid::new_v4().to_string(),
+                action_id: action.id.clone(),
+                action_name: action.name.clone(),
+                server_id: server.id.clone(),
+                server_label: server.label(),
+                command: action.command.clone(),
+                started_at,
+                completed_at,
+                status: status.to_string(),
+                exit_code: outcome.exit_code,
+                output: if outcome.output.is_empty() {
+                    None
+                } else {
+                    Some(outcome.output)
+                },
+                error,
+            };
+
+            update_action_execution_state(&mut actions, &action.id, completed_at, status);
+            core_store::save_actions(&app_dir, &actions)?;
+            core_store::append_history_entry(&app_dir, entry.clone())?;
+
+            emit_action_event(
+                &app,
+                &action.id,
+                &action.name,
+                status,
+                if status == "success" {
+                    format!("{} completed", action.name)
+                } else {
+                    format!("{} finished with errors", action.name)
+                },
+                Some(entry.clone()),
+            );
+
+            if status == "success" {
+                Ok(entry)
+            } else {
+                Err(entry
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| format!("{} failed", action.name)))
+            }
+        }
+        Err(error_message) => {
+            let completed_at = core_store::unix_timestamp_now()?;
+            let entry = ActionHistoryEntry {
+                id: uuid::Uuid::new_v4().to_string(),
+                action_id: action.id.clone(),
+                action_name: action.name.clone(),
+                server_id: server.id.clone(),
+                server_label: server.label(),
+                command: action.command.clone(),
+                started_at,
+                completed_at,
+                status: "error".to_string(),
+                exit_code: None,
+                output: None,
+                error: Some(error_message.clone()),
+            };
+
+            update_action_execution_state(&mut actions, &action.id, completed_at, "error");
+            core_store::save_actions(&app_dir, &actions)?;
+            core_store::append_history_entry(&app_dir, entry.clone())?;
+
+            emit_action_event(
+                &app,
+                &action.id,
+                &action.name,
+                "error",
+                error_message.clone(),
+                Some(entry),
+            );
+
+            Err(error_message)
+        }
     }
-
-    let data = fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read action history file: {}", e))?;
-    parse_json_array_lenient(&data, "action history")
-}
-
-fn save_action_history(app_dir: &Path, entries: &[ActionHistoryEntry]) -> Result<(), String> {
-    let path = get_action_history_path(app_dir);
-    let parent = path
-        .parent()
-        .ok_or_else(|| "Invalid path for action history file".to_string())?;
-    fs::create_dir_all(parent)
-        .map_err(|e| format!("Failed to create app data directory: {}", e))?;
-    let content = serde_json::to_string_pretty(entries)
-        .map_err(|e| format!("Failed to serialize action history: {}", e))?;
-    fs::write(&path, content).map_err(|e| format!("Failed to write action history file: {}", e))?;
-    Ok(())
-}
-
-fn append_history_entry(app_dir: &Path, entry: ActionHistoryEntry) -> Result<(), String> {
-    let mut entries = load_action_history(app_dir)?;
-    entries.push(entry);
-    if entries.len() > MAX_HISTORY_ENTRIES {
-        let drain_count = entries.len() - MAX_HISTORY_ENTRIES;
-        entries.drain(0..drain_count);
-    }
-    save_action_history(app_dir, &entries)
 }
 
 fn emit_action_event(
@@ -172,82 +242,16 @@ fn update_action_execution_state(
     }
 }
 
-fn server_label(server: &ServerConnection) -> String {
-    match &server.nickname {
-        Some(name) if !name.trim().is_empty() => name.trim().to_string(),
-        _ => format!("{}@{}:{}", server.user, server.host, server.port),
-    }
-}
-
-fn push_output(target: &mut String, chunk: &str) {
-    if target.len() >= MAX_OUTPUT_BYTES {
-        return;
-    }
-
-    let remaining = MAX_OUTPUT_BYTES - target.len();
-    if chunk.len() <= remaining {
-        target.push_str(chunk);
-        return;
-    }
-
-    let mut end = remaining;
-    while !chunk.is_char_boundary(end) {
-        end -= 1;
-    }
-    target.push_str(&chunk[..end]);
-    target.push_str("\n[output truncated]");
-}
-
-async fn collect_command_output(
-    channel: &mut russh::Channel<russh::client::Msg>,
-) -> Result<ActionCommandOutcome, String> {
-    let mut output = String::new();
-    let mut exit_code = None;
-
-    loop {
-        let Some(message) = channel.wait().await else {
-            break;
-        };
-
-        match message {
-            ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. } => {
-                let text = String::from_utf8_lossy(data.as_ref());
-                push_output(&mut output, &text);
-            }
-            ChannelMsg::ExitStatus { exit_status } => {
-                exit_code = Some(exit_status);
-            }
-            ChannelMsg::ExitSignal {
-                signal_name,
-                error_message,
-                ..
-            } => {
-                return Err(format!(
-                    "Command terminated by signal {:?}: {}",
-                    signal_name, error_message
-                ));
-            }
-            ChannelMsg::Failure => {
-                return Err("Remote command request failed".to_string());
-            }
-            ChannelMsg::Close | ChannelMsg::Eof => {
-                // Keep reading — ExitStatus may arrive after close/eof.
-                // The loop breaks when channel.wait() returns None.
-            }
-            _ => {}
-        }
-    }
-
-    Ok(ActionCommandOutcome { output, exit_code })
-}
-
+/// Run an action's stored command over a one-shot SSH session.
+///
+/// Allocates a PTY, matching the desktop behaviour, so commands that expect a
+/// terminal behave the same as before. Output capture, the 64 KiB cap, and the
+/// timeout come from `ssh-thing-core` and are shared with the CLI.
 async fn run_action_command(
     app: &AppHandle,
     action: &Action,
     server: &ServerConnection,
-    width: Option<u32>,
-    height: Option<u32>,
-) -> Result<ActionCommandOutcome, String> {
+) -> Result<CommandOutcome, String> {
     let session = connect_ssh(
         app,
         &server.host,
@@ -260,260 +264,25 @@ async fn run_action_command(
     )
     .await?;
 
-    let action_result = async {
-        let mut channel = session
-            .channel_open_session()
-            .await
-            .map_err(|e| format!("Failed to open session channel: {}", e))?;
-
-        // Try to allocate a PTY for proper TTY environment; fall back to plain exec if unsupported
-        let pty_width = width.unwrap_or(80);
-        let pty_height = height.unwrap_or(24);
-        if channel
-            .request_pty(false, "xterm-256color", pty_width, pty_height, 0, 0, &[])
-            .await
-            .is_err()
-        {
-            debug!("PTY allocation failed for action, falling back to plain exec");
-        }
-
-        channel
-            .exec(true, action.command.clone())
-            .await
-            .map_err(|e| format!("Failed to start command: {}", e))?;
-
-        emit_action_event(
-            app,
-            &action.id,
-            &action.name,
-            "running",
-            format!("Running on {}", server_label(server)),
-            None,
-        );
-
-        if let Some(timeout_seconds) = action.timeout_seconds {
-            let command_timeout = Duration::from_secs(timeout_seconds.max(1));
-            timeout(command_timeout, collect_command_output(&mut channel))
-                .await
-                .map_err(|_| {
-                    format!(
-                        "Command timed out after {} seconds",
-                        command_timeout.as_secs()
-                    )
-                })?
-        } else {
-            collect_command_output(&mut channel).await
-        }
-    }
-    .await;
-
-    let _ = disconnect_ssh(app, Some(session), None, None).await;
-    action_result
-}
-
-#[tauri::command]
-pub async fn get_actions(app: AppHandle) -> Result<Vec<Action>, String> {
-    let app_dir = get_app_dir(&app)?;
-    load_actions(&app_dir)
-}
-
-#[tauri::command]
-pub async fn add_action(app: AppHandle, action: Action) -> Result<Vec<Action>, String> {
-    let app_dir = get_app_dir(&app)?;
-    let mut actions = load_actions(&app_dir)?;
-    actions.push(action);
-    save_actions(&app_dir, &actions)?;
-    Ok(actions)
-}
-
-#[tauri::command]
-pub async fn update_action(
-    app: AppHandle,
-    id: String,
-    action: Action,
-) -> Result<Vec<Action>, String> {
-    let app_dir = get_app_dir(&app)?;
-    let mut actions = load_actions(&app_dir)?;
-    let index = actions
-        .iter()
-        .position(|item| item.id == id)
-        .ok_or_else(|| format!("Action with id {} not found", id))?;
-    actions[index] = action;
-    save_actions(&app_dir, &actions)?;
-    Ok(actions)
-}
-
-#[tauri::command]
-pub async fn delete_action(app: AppHandle, id: String) -> Result<Vec<Action>, String> {
-    let app_dir = get_app_dir(&app)?;
-    let mut actions = load_actions(&app_dir)?;
-    let index = actions
-        .iter()
-        .position(|item| item.id == id)
-        .ok_or_else(|| format!("Action with id {} not found", id))?;
-    actions.remove(index);
-    save_actions(&app_dir, &actions)?;
-
-    let history = load_action_history(&app_dir)?;
-    let filtered: Vec<ActionHistoryEntry> = history
-        .into_iter()
-        .filter(|entry| entry.action_id != id)
-        .collect();
-    save_action_history(&app_dir, &filtered)?;
-
-    Ok(actions)
-}
-
-#[tauri::command]
-pub async fn get_action_history(
-    app: AppHandle,
-    action_id: Option<String>,
-) -> Result<Vec<ActionHistoryEntry>, String> {
-    let app_dir = get_app_dir(&app)?;
-    let mut history = load_action_history(&app_dir)?;
-    history.sort_by_key(|entry| std::cmp::Reverse(entry.completed_at));
-
-    if let Some(target_id) = action_id {
-        history.retain(|entry| entry.action_id == target_id);
-    }
-
-    Ok(history)
-}
-
-#[tauri::command]
-pub async fn execute_action(
-    app: AppHandle,
-    action_id: String,
-) -> Result<ActionHistoryEntry, String> {
-    let app_dir = get_app_dir(&app)?;
-    let mut actions = load_actions(&app_dir)?;
-    let action = actions
-        .iter()
-        .find(|item| item.id == action_id)
-        .cloned()
-        .ok_or_else(|| format!("Action with id {} not found", action_id))?;
-    let servers = load_servers(&app_dir, &app)?;
-    let server = servers
-        .iter()
-        .find(|item| item.id == action.server_id)
-        .cloned()
-        .ok_or_else(|| {
-            format!(
-                "Server with id {} not found for action {}",
-                action.server_id, action.name
-            )
-        })?;
-    let started_at = unix_timestamp_now()?;
-
     emit_action_event(
-        &app,
+        app,
         &action.id,
         &action.name,
-        "connecting",
-        format!("Connecting to {}", server_label(&server)),
+        "running",
+        format!("Running on {}", server.label()),
         None,
     );
 
-    debug!(action_id = %action.id, server_id = %server.id, "Executing action");
+    let result = ssh_thing_core::exec_command(
+        &session,
+        &action.command,
+        Some((80, 24)),
+        action.timeout_seconds,
+    )
+    .await;
 
-    match run_action_command(&app, &action, &server, None, None).await {
-        Ok(outcome) => {
-            let completed_at = unix_timestamp_now()?;
-            let (status, error) = match outcome.exit_code {
-                Some(0) => ("success", None),
-                Some(code) => (
-                    "error",
-                    Some(format!("Command exited with status {}", code)),
-                ),
-                None => {
-                    if outcome.output.is_empty() {
-                        ("error", Some("Command produced no output and returned no exit status — the command may have failed to start or the SSH server closed the channel abnormally.".to_string()))
-                    } else {
-                        (
-                            "error",
-                            Some("Command completed without an exit status".to_string()),
-                        )
-                    }
-                }
-            };
-            let entry = ActionHistoryEntry {
-                id: uuid::Uuid::new_v4().to_string(),
-                action_id: action.id.clone(),
-                action_name: action.name.clone(),
-                server_id: server.id.clone(),
-                server_label: server_label(&server),
-                command: action.command.clone(),
-                started_at,
-                completed_at,
-                status: status.to_string(),
-                exit_code: outcome.exit_code,
-                output: if outcome.output.is_empty() {
-                    None
-                } else {
-                    Some(outcome.output)
-                },
-                error,
-            };
-
-            update_action_execution_state(&mut actions, &action.id, completed_at, status);
-            save_actions(&app_dir, &actions)?;
-            append_history_entry(&app_dir, entry.clone())?;
-
-            emit_action_event(
-                &app,
-                &action.id,
-                &action.name,
-                status,
-                if status == "success" {
-                    format!("{} completed", action.name)
-                } else {
-                    format!("{} finished with errors", action.name)
-                },
-                Some(entry.clone()),
-            );
-
-            if status == "success" {
-                Ok(entry)
-            } else {
-                Err(entry
-                    .error
-                    .clone()
-                    .unwrap_or_else(|| format!("{} failed", action.name)))
-            }
-        }
-        Err(error_message) => {
-            let completed_at = unix_timestamp_now()?;
-            let entry = ActionHistoryEntry {
-                id: uuid::Uuid::new_v4().to_string(),
-                action_id: action.id.clone(),
-                action_name: action.name.clone(),
-                server_id: server.id.clone(),
-                server_label: server_label(&server),
-                command: action.command.clone(),
-                started_at,
-                completed_at,
-                status: "error".to_string(),
-                exit_code: None,
-                output: None,
-                error: Some(error_message.clone()),
-            };
-
-            update_action_execution_state(&mut actions, &action.id, completed_at, "error");
-            save_actions(&app_dir, &actions)?;
-            append_history_entry(&app_dir, entry.clone())?;
-
-            emit_action_event(
-                &app,
-                &action.id,
-                &action.name,
-                "error",
-                error_message.clone(),
-                Some(entry),
-            );
-
-            Err(error_message)
-        }
-    }
+    ssh_thing_core::disconnect_quiet(session).await;
+    result
 }
 
 #[cfg(test)]
@@ -572,10 +341,34 @@ mod tests {
     }
 
     #[test]
-    fn test_push_output_truncates_long_text() {
-        let mut output = String::new();
-        push_output(&mut output, &"a".repeat(MAX_OUTPUT_BYTES + 128));
-        assert!(output.len() <= MAX_OUTPUT_BYTES + 32);
-        assert!(output.contains("[output truncated]"));
+    fn execution_state_updates_only_the_target_action() {
+        let mut actions = vec![
+            Action {
+                id: "a1".to_string(),
+                name: "One".to_string(),
+                description: None,
+                server_id: "s1".to_string(),
+                command: "true".to_string(),
+                timeout_seconds: None,
+                last_executed_at: None,
+                last_execution_status: None,
+            },
+            Action {
+                id: "a2".to_string(),
+                name: "Two".to_string(),
+                description: None,
+                server_id: "s1".to_string(),
+                command: "true".to_string(),
+                timeout_seconds: None,
+                last_executed_at: None,
+                last_execution_status: None,
+            },
+        ];
+
+        update_action_execution_state(&mut actions, "a2", 42, "success");
+
+        assert!(actions[0].last_executed_at.is_none());
+        assert_eq!(actions[1].last_executed_at, Some(42));
+        assert_eq!(actions[1].last_execution_status.as_deref(), Some("success"));
     }
 }

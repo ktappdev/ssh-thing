@@ -681,7 +681,7 @@ export function createSessionManager(options) {
         `You can have up to ${MAX_CONNECTIONS} active sessions. Disconnect one to open another.`,
         "warning",
       );
-      return;
+      return null;
     }
 
     removeWelcomeSession();
@@ -716,14 +716,27 @@ export function createSessionManager(options) {
     } catch (error) {
       console.error("Failed to connect:", error);
       updateConnectionState(session, { type: "Error", error: String(error) });
+      return null;
     }
+    return session;
   }
 
-  async function connectToServer(serverId) {
+  async function connectToServer(serverId, { refreshServers = true } = {}) {
     const server = getServers().find((item) => item.id === serverId);
-    if (!server) return;
+    if (!server) return null;
     const session = createSession(server);
-    await connectSession(session);
+    return connectSession(session, { refreshServers });
+  }
+
+  // Used by scoped snippets: reuse the newest live session for the target
+  // server when possible, otherwise open (and focus) a new connection.
+  async function ensureConnectedSessionForServer(serverId) {
+    const existing = getMostRecentSessionForServer(serverId, { liveOnly: true });
+    if (existing) {
+      setActiveSession(existing.id);
+      return existing;
+    }
+    return connectToServer(serverId);
   }
 
   async function reconnectActiveSession() {
@@ -859,6 +872,7 @@ export function createSessionManager(options) {
     getKeyboardSessions,
     hasActiveConnections,
     connectToServer,
+    ensureConnectedSessionForServer,
     reconnectActiveSession,
     disconnectSession,
     focusMostRecentSessionForServer,
