@@ -100,9 +100,83 @@ impl Command {
 
 #[tokio::main]
 async fn main() {
-    let cli = Cli::parse();
+    // Parsed by hand so argument errors obey the same contract as every other
+    // failure: one JSON envelope on stdout, and exit 1 for usage.
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(error) => std::process::exit(handle_parse_error(error)),
+    };
     let human = cli.human;
     std::process::exit(dispatch(cli.command, human).await);
+}
+
+/// Turn a clap parse failure into the documented usage error.
+///
+/// Letting clap exit on its own printed to stderr and used exit code 2, which
+/// the spec reserves for "the run executed and failed". It also left stdout
+/// empty, so a caller parsing the envelope had nothing to parse and could not
+/// tell a typo from a failed command.
+fn handle_parse_error(error: clap::Error) -> i32 {
+    use clap::error::ErrorKind;
+
+    // `--help` and `--version` are successful output, not failures.
+    if matches!(
+        error.kind(),
+        ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
+    ) {
+        print!("{error}");
+        return commands::EXIT_OK;
+    }
+
+    let (message, usage) = split_usage(&error.to_string());
+
+    // Best effort: a human who typed `--human` gets prose, everyone else gets
+    // the stable contract. Detection is by argv because parsing just failed.
+    if std::env::args().any(|argument| argument == "--human") {
+        eprintln!("error: {message}");
+        if let Some(usage) = &usage {
+            eprintln!("usage: {usage}");
+        }
+        return commands::EXIT_USAGE;
+    }
+
+    print_envelope(&Envelope::<serde_json::Value>::failed(
+        "usage",
+        CliError {
+            code: "usage",
+            message,
+            hint: usage.map(|usage| format!("Usage: {usage}")),
+        },
+    ));
+    commands::EXIT_USAGE
+}
+
+/// clap renders `<what went wrong>\n\nUsage: <usage>\n\nFor more information…`.
+/// Split that into a one-line message and the usage line.
+fn split_usage(raw: &str) -> (String, Option<String>) {
+    let mut message_lines: Vec<&str> = Vec::new();
+    let mut usage = None;
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("Usage:") {
+            usage = Some(rest.trim().to_string());
+            break;
+        }
+        // clap's sign-off line carries nothing the envelope needs.
+        if trimmed.is_empty() || trimmed.starts_with("For more information") {
+            continue;
+        }
+        message_lines.push(trimmed);
+    }
+
+    let message = message_lines.join(" ");
+    let message = message
+        .strip_prefix("error: ")
+        .unwrap_or(&message)
+        .to_string();
+
+    (message, usage)
 }
 
 async fn dispatch(command: Command, human: bool) -> i32 {

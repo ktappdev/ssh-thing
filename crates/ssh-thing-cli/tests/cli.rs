@@ -399,6 +399,78 @@ fn version_reports_the_schema_and_rejects_nothing() {
 }
 
 #[test]
+fn argument_errors_use_the_usage_exit_code_and_the_json_envelope() {
+    let fixture = Fixture::new("parse-errors", false);
+
+    // Previously clap exited 2 with an empty stdout, which collided with
+    // EXIT_FAILED and gave a caller nothing to parse.
+    let unknown = fixture.run(&["bogus-command"]);
+    assert_eq!(exit_code(&unknown), 1);
+    let body = envelope(&unknown);
+    assert_eq!(body["ok"], Value::Bool(false));
+    assert_eq!(body["command"], "usage");
+    assert_eq!(error_code(&body), "usage");
+    assert!(body["data"].is_null());
+
+    let missing = fixture.run(&["run"]);
+    assert_eq!(exit_code(&missing), 1);
+    let body = envelope(&missing);
+    assert_eq!(error_code(&body), "usage");
+    assert!(body["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("--snippet"));
+    assert!(body["error"]["hint"]
+        .as_str()
+        .expect("usage hint")
+        .starts_with("Usage:"));
+
+    let conflicting = fixture.run(&["servers", "--nope"]);
+    assert_eq!(exit_code(&conflicting), 1);
+    assert_eq!(error_code(&envelope(&conflicting)), "usage");
+
+    // clap's sign-off line is noise in an envelope; the usage line is the hint.
+    let bad_value = fixture.run(&["run", "--snippet", "x", "--timeout", "abc"]);
+    assert_eq!(exit_code(&bad_value), 1);
+    let message = envelope(&bad_value)["error"]["message"]
+        .as_str()
+        .expect("message")
+        .to_string();
+    assert!(message.contains("--timeout"));
+    assert!(!message.contains("For more information"));
+}
+
+#[test]
+fn human_argument_errors_stay_text_on_stderr() {
+    let fixture = Fixture::new("parse-errors-human", false);
+
+    let output = fixture.run(&["bogus-command", "--human"]);
+    assert_eq!(exit_code(&output), 1);
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("bogus-command"));
+}
+
+#[test]
+fn help_succeeds_on_stdout_without_reading_any_data() {
+    let fixture = Fixture::new("help", false);
+
+    let top = fixture.run(&["--help"]);
+    assert_eq!(exit_code(&top), 0);
+    let stdout = String::from_utf8_lossy(&top.stdout);
+    assert!(stdout.contains("Usage: ssh-thing"));
+    assert!(stdout.contains("run"));
+    assert!(top.stderr.is_empty());
+
+    // Subcommand help is where the capability boundary is documented.
+    let run = fixture.run(&["run", "--help"]);
+    assert_eq!(exit_code(&run), 0);
+    let stdout = String::from_utf8_lossy(&run.stdout);
+    assert!(stdout.contains("--snippet"));
+    assert!(!stdout.contains("--command"));
+    assert!(run.stderr.is_empty());
+}
+
+#[test]
 fn human_output_is_not_json_but_still_exits_zero() {
     let fixture = Fixture::new("human", false);
     let output = fixture.run(&["servers", "--human"]);

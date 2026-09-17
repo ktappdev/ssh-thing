@@ -62,7 +62,9 @@ person reading a terminal; it is not a second contract.
 
 ### Response envelope
 
-Every command prints one object, on stdout, whether it succeeded or not:
+Every command prints one object, on stdout, whether it succeeded or not —
+including argument errors such as an unknown subcommand, a missing flag, or an
+invalid value. stdout is never empty, so a caller always has something to parse:
 
 ```json
 {
@@ -100,7 +102,7 @@ while branching on `ok`. Error codes in use: `usage`, `read_failed`,
 | Code | Meaning |
 |---|---|
 | 0 | Success (including `--dry-run`). |
-| 1 | Usage: unknown or ambiguous snippet/server, bad selector. |
+| 1 | Usage: unknown or ambiguous snippet/server, bad selector, or an argument error (unknown subcommand, missing or invalid flag). Never exits 2 and never leaves stdout empty. |
 | 2 | The run executed and failed (non-zero exit, timeout, connect, auth). |
 | 3 | Blocked by policy before running: gate off, unscoped snippet, cross-server. |
 

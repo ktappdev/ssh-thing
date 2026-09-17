@@ -154,14 +154,14 @@ command, which §4a independently forces.
 node --check frontend/main.js
 node --check frontend/components/automation-manager.js
 cargo fmt --all --check
-cargo test --workspace                                   # 89 passed
+cargo test --workspace                                   # 92 passed
 cargo clippy --workspace --all-targets -- -D warnings     # clean
 cargo build -p tauri-app                                  # links
 cargo build --release -p ssh-thing-cli                    # 3.99 MB
 ```
 
 Test distribution: 41 in `tauri-app` (pre-existing suite, unchanged and still
-passing against core types), 25 in `ssh-thing-core`, 8 unit + 15 integration in
+passing against core types), 25 in `ssh-thing-core`, 8 unit + 18 integration in
 `ssh-thing-cli`.
 
 `crates/ssh-thing-cli/tests/cli.rs` invokes the compiled binary through
@@ -226,6 +226,7 @@ could disagree with its own documentation or hand a caller a wrong answer.
 | 4 | **`cli_status.update_available` was true with nothing installed,** because `None != Some(v)`. The UI masked it; API consumers did not. | `needs_update(installed, installed_version, expected)` — false when not installed, true when installed but stale *or* unreadable. Unit-tested exhaustively. |
 | 5 | **`doctor` read `servers.json` twice** to build the check and the override-variable list, so the two could disagree. | Loaded once and reused. |
 | 6 | **The checksum parser took the first whitespace token,** which only works for GNU `sha256sum` output. A BSD `SHA256 (file) = <hash>` file would have been rejected as malformed. | `parse_checksum` scans tokens for the first 64-hex value instead. Both formats unit-tested. |
+| 7 | **Argument errors broke the contract.** clap printed to stderr and exited 2, which the spec reserves for "the run executed and failed", leaving stdout empty so a caller had nothing to parse. Found by *running* the binary, not by reading it — every one of cases 1–6 came from reading. | `Cli::try_parse()` is handled in `main.rs`: argument errors now emit the standard envelope with code `usage` and exit 1, `--help`/`--version` still print to stdout and exit 0, and `--human` is honoured from argv (parsing has already failed) so a person still gets prose on stderr. |
 
 Two smaller additions came out of the same pass:
 
@@ -237,12 +238,23 @@ PTY is allocated, so a password-prompting command can only hang. The hint is
 added in `commands.rs`, not in `core::ssh::exec_command`, so the desktop's
 timeout text (which *does* allocate a PTY) is unchanged.
 
-Verified after the pass: `cargo fmt --all --check`, 89 tests, `clippy -D warnings`
+Verified after the pass: `cargo fmt --all --check`, 92 tests, `clippy -D warnings`
 clean, both binaries build, and three behaviours checked by hand against the
 release binary with a fixture data directory — `--timeout 1` reports
 `timeout_seconds: 5` with `timeout_clamped: true`; `settings.json` containing
 `null` exits 3 with `settings_unreadable`; `doctor --human` prints
 `Runnable now: no` with the gate off while every other check passes.
+
+### First run against the real data directory
+
+The CLI was then exercised against the live app-data directory with read-only
+commands, no snippet executed: `version`, `servers`, `snippets`, `history`, and
+`doctor` all exit 0 and carry no credential material; the gate is off so every
+`run` exits 3 `automation_disabled` before any connection; `snippets --server
+<nonsense>` exits 1 `usage`. Live data at the time: 5 servers, 15 snippets, **0
+scoped**, so `doctor` reported `snippets_load: 0 runnable of 15 total` with
+`healthy: true` and `runnable: false` — exactly the distinction `runnable` was
+added for. This run is what surfaced defect 7.
 
 ## 6. Remaining gaps
 
