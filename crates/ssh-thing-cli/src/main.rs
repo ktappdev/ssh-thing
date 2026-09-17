@@ -226,18 +226,28 @@ async fn dispatch(command: Command, human: bool) -> i32 {
 
                     // The run happened and failed. Exit non-zero and keep the
                     // full report so the caller can branch on `ok` and still
-                    // read the output, exit code, and error.
+                    // read the output, exit code, and error. The failure is
+                    // classified so neither a machine nor a human has to
+                    // interpret an OS error string to know what to do.
+                    let failure =
+                        core::classify_run_failure(report.error.as_deref().unwrap_or_default());
+                    let message = report
+                        .error
+                        .clone()
+                        .unwrap_or_else(|| "The command failed.".to_string());
+
                     match lines {
-                        Some(lines) => print_lines(&lines),
+                        Some(mut lines) => {
+                            lines.push(format!("hint: {}", failure.hint));
+                            print_lines(&lines);
+                        }
                         None => print_envelope(&Envelope::failed_with_data(
                             name,
-                            CliError::new(
-                                "run_failed",
-                                report
-                                    .error
-                                    .clone()
-                                    .unwrap_or_else(|| "The command failed.".to_string()),
-                            ),
+                            CliError {
+                                code: failure.code,
+                                message,
+                                hint: Some(failure.hint.to_string()),
+                            },
                             report,
                         )),
                     }

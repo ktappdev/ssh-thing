@@ -154,14 +154,14 @@ command, which §4a independently forces.
 node --check frontend/main.js
 node --check frontend/components/automation-manager.js
 cargo fmt --all --check
-cargo test --workspace                                   # 92 passed
+cargo test --workspace                                   # 99 passed
 cargo clippy --workspace --all-targets -- -D warnings     # clean
 cargo build -p tauri-app                                  # links
 cargo build --release -p ssh-thing-cli                    # 3.99 MB
 ```
 
-Test distribution: 41 in `tauri-app` (pre-existing suite, unchanged and still
-passing against core types), 25 in `ssh-thing-core`, 8 unit + 18 integration in
+Test distribution: 42 in `tauri-app` (pre-existing suite, unchanged and still
+passing against core types), 30 in `ssh-thing-core`, 8 unit + 19 integration in
 `ssh-thing-cli`.
 
 `crates/ssh-thing-cli/tests/cli.rs` invokes the compiled binary through
@@ -255,6 +255,50 @@ commands, no snippet executed: `version`, `servers`, `snippets`, `history`, and
 scoped**, so `doctor` reported `snippets_load: 0 runnable of 15 total` with
 `healthy: true` and `runnable: false` — exactly the distinction `runnable` was
 added for. This run is what surfaced defect 7.
+
+### Failure handling and fallbacks (2026-09-17)
+
+Prompted by "handle it gracefully" rather than by a defect report: live failures
+were flat. A refused connection, a bad hostname, an unpaid/powered-off server,
+and an unroutable address all came back as `run_failed` plus raw OS text like
+`Connection refused (os error 61)`. That is technically feedback and useless to
+anyone who does not already read errno.
+
+What changed:
+
+| Change | Where |
+|---|---|
+| `classify_run_failure` maps a message to a specific `code` and an actionable `hint` | `core::ssh`, next to the messages it matches |
+| `run` puts that code and hint in the envelope instead of a fixed `run_failed`, and `--human` prints the hint too | `cli/main.rs` |
+| Repo-wide decision: a hint is never empty, including the catch-all | `classify_run_failure` |
+| A 404 on install now says the version has no published asset yet and gives the from-source command; timeouts and connect failures get their own wording | `cli_manager::describe_download_error`, `not_published_message` |
+| A scoped snippet that cannot get a session says `Snippet not run: …` instead of returning silently | `frontend/main.js`, `executeSnippet` |
+| `execute_action` rejecting before any event clears the row's running state and shows the error instead of leaving it spinning | `frontend/components/actions-manager.js` |
+
+Codes now in use for a failed run: `command_failed`, `command_timed_out`,
+`command_signalled`, `unreachable`, `dns_failed`, `connect_timeout`,
+`auth_failed`, `credential_missing`, `credential_unavailable`,
+`host_key_unknown`, `host_key_mismatch`, `run_failed`. The ordering inside the
+classifier is load-bearing: `Command timed out` is tested before the generic
+`timed out`, or every command timeout would be reported as a connect timeout.
+
+Verified live against `server2`, not only in fixtures:
+
+| Failure | Result |
+|---|---|
+| `ls /definitely-not-here-xyz` | exit 2, `command_failed`, `exit_code: 2`, stderr in `data.output` |
+| `sleep 12` with `--timeout 5` | exit 2, `command_timed_out`, `exit_code: null`, hint names the missing PTY |
+| `127.0.0.1:1` | exit 2, `unreachable` |
+| `nonexistent-host.invalid` | exit 2, `dns_failed` |
+| unroutable address, 5s connect timeout | exit 2, `connect_timeout` |
+
+Also confirmed: failed runs are written to `cli-history.json` with their error
+text, so a failure leaves an audit trail rather than vanishing.
+
+Two of the frontend fixes are the same class of bug as the CLI one — the user
+was doing something and nothing happened. Neither had a test to catch it, and
+this repository has no JS test harness, so both were reviewed by reading the call
+path rather than by running it.
 
 ## 6. Remaining gaps
 

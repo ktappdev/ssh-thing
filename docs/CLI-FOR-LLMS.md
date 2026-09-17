@@ -95,7 +95,32 @@ A run that executed and failed sets `ok: false` **and** still populates `data`
 with the full report, so the caller can read the output, exit code, and error
 while branching on `ok`. Error codes in use: `usage`, `read_failed`,
 `app_data_dir`, `automation_disabled`, `settings_unreadable`, `not_scoped`,
-`scope_mismatch`, `server_missing`, `run_failed`, `clock_error`.
+`scope_mismatch`, `server_missing`, `clock_error`, and the run failures below.
+
+### Failure codes for a run that did not succeed
+
+A `run` that got past the pre-flight gates always reports `ok: false` with the
+full report in `data` **and** a specific error code plus an actionable `hint`.
+Nothing is left for the caller to infer from an OS error string:
+
+| Code | Meaning | Exit |
+|---|---|---|
+| `command_failed` | The snippet ran; the remote command exited non-zero. | 2 |
+| `command_timed_out` | The command outlived its timeout. | 2 |
+| `command_signalled` | The command was killed by a signal. | 2 |
+| `unreachable` | Refused, no route, or host down. Nothing was executed. | 2 |
+| `dns_failed` | The hostname did not resolve. | 2 |
+| `connect_timeout` | The host never answered. | 2 |
+| `auth_failed` | The stored password or key was rejected. | 2 |
+| `credential_missing` | No stored credential exists for the server. | 2 |
+| `credential_unavailable` | The credential exists but the keychain refused it. | 2 |
+| `host_key_unknown` | The key is not approved; nothing was sent. | 2 |
+| `host_key_mismatch` | The key changed; the run stopped. | 2 |
+| `run_failed` | Anything unclassified, still with a hint. | 2 |
+
+Classification lives in `core::ssh::classify_run_failure` next to the messages it
+matches, and `--human` prints the same hint after the report so a person is never
+worse off than a machine.
 
 ### Exit codes
 
@@ -144,6 +169,9 @@ while branching on `ok`. Error codes in use: `usage`, `read_failed`,
   the CLI allocates no PTY, so a command waiting on a password prompt can only
   hang until the timeout. Snippets intended for CLI use should rely on
   `NOPASSWD` sudo or key authentication.
+- Every failed run is recorded in `cli-history.json` with its error text, so a
+  failure leaves a trail instead of vanishing. A write failure there is warned
+  about on stderr and does not change the outcome of the run.
 - An unreadable `settings.json` is a policy refusal, not a run failure: it
   exits 3 with `settings_unreadable` and a hint, rather than being silently
   defaulted or reported as `run_failed`.
@@ -226,7 +254,28 @@ automation setting alone.
   unscoped by default and therefore CLI-unrunnable until assigned.
 - **Per-snippet destructive approval** — deliberately not in v1 (decision D5).
 
-## 8. Data and compatibility
+## 8. Degrading gracefully
+
+Nothing in this feature fails silently. The rules, and where each is enforced:
+
+| Situation | What the caller gets |
+|---|---|
+| Server is down, unpaid, suspended, or unreachable | `unreachable` / `connect_timeout` / `dns_failed` with a hint that lists the likely causes and states that nothing was executed |
+| Wrong or rotated credential | `auth_failed`, or `credential_missing` / `credential_unavailable` when the keychain is the problem |
+| Host key unknown or changed | `host_key_unknown` / `host_key_mismatch`, refused before anything is sent |
+| Command fails, hangs, or is killed | `command_failed` / `command_timed_out` / `command_signalled`, with output and exit code attached |
+| CLI not installed, or not built for this platform | The Automation panel says so and disables Install rather than offering a button that cannot work |
+| Version has no published CLI asset yet | Install fails with the reason and the from-source command, instead of a bare 404 |
+| Network fails during install | Distinguishes timeout, cannot-connect, and checksum mismatch, each with a next step |
+| Automation off | `automation_disabled` plus the exact menu path to change it |
+| Unclassified failure | `run_failed` with a `doctor` hint — never an empty hint |
+
+On the desktop side the same rule applies: a scoped snippet that could not get a
+session now says so (`Snippet not run: …`), and `execute_action` rejecting before
+it emits any event clears the row's running state and shows the error, where it
+previously left the row spinning with nothing displayed.
+
+## 9. Data and compatibility
 
 - `Snippet` gains `server_id: Option<String>`, `#[serde(default)]`, so old files
   load with `None` (global, desktop-only).
@@ -243,7 +292,7 @@ automation setting alone.
 - New fields are always `Option` or `#[serde(default)]`; `DATA_SCHEMA_VERSION`
   is `1` and is reported by `ssh-thing version`.
 
-## 9. Release and CI
+## 10. Release and CI
 
 - `release.yml` gained a `build-cli` job: `macos-aarch64`, `macos-x64`,
   `linux-x64`, each running `cargo build --release -p ssh-thing-cli --target …`,
@@ -254,7 +303,7 @@ automation setting alone.
   the whole release — desktop bundles and CLI assets — is uploaded.
 - The CLI job installs no GTK/webkit dependencies; it is a plain Rust build.
 
-## 10. Decisions (all resolved)
+## 11. Decisions (all resolved)
 
 | # | Decision | Outcome |
 |---|---|---|
@@ -266,7 +315,7 @@ automation setting alone.
 | D6 | Download source | GitHub Releases, with published `.sha256`. R2 remains a possible future mirror. |
 | D7 | Homebrew cask gated on the CLI build | **Keep the gate.** `update-homebrew` still needs `[build, build-cli]`, so the cask moves only when the release is complete. A CLI build failure therefore delays the Homebrew update but never publishes a partial release; the DMGs and the GitHub Release are unaffected. |
 
-## 11. Remaining gaps
+## 12. Remaining gaps
 
 Everything architectural is closed; see `docs/CLI-KNOWLEDGE-BASE.md` §6 for the
 list of what implementation could not verify (no release carries CLI assets yet,

@@ -456,15 +456,10 @@ pub async fn run(app_dir: &Path, request: RunRequest<'_>) -> Result<(RunReport, 
         }
         Err(message) => {
             report.status = "error";
-            // The CLI never allocates a PTY, so this failure mode has one
-            // overwhelmingly likely cause and the agent can act on it alone.
-            report.error = Some(if message.starts_with("Command timed out") {
-                format!(
-                    "{message}. The CLI runs without a PTY, so a command that waits for a password prompt can only hang until the timeout. Use sudo with NOPASSWD, or key-based authentication, for CLI-runnable snippets."
-                )
-            } else {
-                message
-            });
+            // Prose is for `data.error`; the structured code and the actionable
+            // hint go in the envelope, so a caller never has to parse an OS
+            // error string to find out what to do next.
+            report.error = Some(message);
             EXIT_FAILED
         }
     };

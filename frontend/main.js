@@ -683,6 +683,12 @@ async function executeSnippet(snippet) {
       }
       const session = await sessionManager?.ensureConnectedSessionForServer(server.id);
       if (!session || !session.shellId || !session.term) {
+        // The failed connect already reported its own reason (session limit, or
+        // a connection error). Say that the snippet did not run anyway: a
+        // connection alert on its own reads as "the terminal failed", not
+        // "your snippet was skipped", and a still-connecting session used to
+        // return here with no feedback at all.
+        showToast(`Snippet not run: no session for ${getSnippetServerLabel(server.id)}`, "warning");
         return;
       }
       await sendSnippetToSession(session, snippet);

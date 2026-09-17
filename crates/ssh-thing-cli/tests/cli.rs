@@ -399,6 +399,81 @@ fn version_reports_the_schema_and_rejects_nothing() {
 }
 
 #[test]
+fn unreachable_and_unresolvable_servers_report_actionable_codes() {
+    let fixture = Fixture::new("unreachable", true);
+    write(&fixture.dir.join("known_hosts.json"), "[]");
+    write(
+        &fixture.dir.join("servers.json"),
+        r#"[
+          {
+            "id": "srv-refused",
+            "nickname": "refused",
+            "host": "127.0.0.1",
+            "port": 1,
+            "user": "root",
+            "timeout_seconds": 5,
+            "auth": { "type": "SecretRef", "secret_id": "server:srv-refused:password", "kind": "Password" }
+          },
+          {
+            "id": "srv-nodns",
+            "nickname": "nodns",
+            "host": "nonexistent-host.invalid",
+            "port": 22,
+            "user": "root",
+            "timeout_seconds": 5,
+            "auth": { "type": "SecretRef", "secret_id": "server:srv-nodns:password", "kind": "Password" }
+          }
+        ]"#,
+    );
+    write(
+        &fixture.dir.join("snippets.json"),
+        r#"[
+          { "id": "sn-refused", "name": "unreachable", "command": "ls", "description": null, "server_id": "srv-refused" },
+          { "id": "sn-nodns", "name": "no-dns", "command": "ls", "description": null, "server_id": "srv-nodns" }
+        ]"#,
+    );
+
+    // A refused TCP connection: the server is down, or the port is wrong.
+    let refused = fixture.run(&["run", "--snippet", "unreachable", "--timeout", "5"]);
+    assert_eq!(exit_code(&refused), 2);
+    let body = envelope(&refused);
+    assert_eq!(body["ok"], Value::Bool(false));
+    assert_eq!(error_code(&body), "unreachable");
+    assert!(body["error"]["hint"].as_str().expect("hint").len() > 20);
+    // The full report still rides along, so the caller can see what was tried.
+    assert_eq!(body["data"]["snippet"], "unreachable");
+    assert_eq!(body["data"]["status"], "error");
+    assert_eq!(body["data"]["exit_code"], Value::Null);
+    assert!(body["data"]["error"]
+        .as_str()
+        .expect("report error")
+        .to_ascii_lowercase()
+        .contains("refused"));
+
+    // A hostname that cannot resolve.
+    let dns = fixture.run(&["run", "--snippet", "no-dns", "--timeout", "5"]);
+    assert_eq!(exit_code(&dns), 2);
+    let body = envelope(&dns);
+    assert_eq!(error_code(&body), "dns_failed");
+    assert!(body["error"]["hint"]
+        .as_str()
+        .expect("hint")
+        .contains("address"));
+
+    // A human gets the same guidance, in prose, on stdout.
+    let human = fixture.run(&["run", "--snippet", "unreachable", "--human"]);
+    assert_eq!(exit_code(&human), 2);
+    let stdout = String::from_utf8_lossy(&human.stdout);
+    assert!(stdout.contains("hint:"), "stdout was: {stdout}");
+
+    // Failures are audited, not swallowed.
+    let history = envelope(&fixture.run(&["history"]));
+    let entries = history["data"].as_array().expect("history array");
+    assert_eq!(entries.len(), 3);
+    assert!(entries.iter().all(|entry| entry["status"] == "error"));
+}
+
+#[test]
 fn argument_errors_use_the_usage_exit_code_and_the_json_envelope() {
     let fixture = Fixture::new("parse-errors", false);
 

@@ -179,18 +179,19 @@ pub async fn install_cli(app: AppHandle) -> Result<CliInstallResult, String> {
         .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
 
     // Checksum first: refuse to keep bytes we cannot verify.
-    let expected_checksum = fetch_checksum(&client, &format!("{base}/{asset}.sha256")).await?;
+    let expected_checksum =
+        fetch_checksum(&client, &format!("{base}/{asset}.sha256"), &version).await?;
 
     let bytes = client
         .get(format!("{base}/{asset}"))
         .send()
         .await
-        .map_err(|e| format!("Failed to download {asset}: {e}"))?
+        .map_err(|error| describe_download_error("binary", &asset, &version, error))?
         .error_for_status()
-        .map_err(|e| format!("Release asset {asset} is not available: {e}"))?
+        .map_err(|error| describe_download_error("binary", &asset, &version, error))?
         .bytes()
         .await
-        .map_err(|e| format!("Failed to read the downloaded binary: {e}"))?;
+        .map_err(|error| format!("Failed to read the downloaded binary: {error}"))?;
 
     let actual_checksum = hex::encode(Sha256::digest(&bytes));
     if actual_checksum != expected_checksum {
@@ -287,20 +288,75 @@ fn recorded_path(settings: &AutomationSettings) -> Option<PathBuf> {
     settings.cli_install_path.as_ref().map(PathBuf::from)
 }
 
-async fn fetch_checksum(client: &reqwest::Client, url: &str) -> Result<String, String> {
+async fn fetch_checksum(
+    client: &reqwest::Client,
+    url: &str,
+    version: &str,
+) -> Result<String, String> {
     let body = client
         .get(url)
         .send()
         .await
-        .map_err(|e| format!("Failed to download the checksum file: {e}"))?
+        .map_err(|error| describe_download_error("checksum", url, version, error))?
         .error_for_status()
-        .map_err(|e| format!("Checksum file is not available: {e}"))?
+        .map_err(|error| describe_download_error("checksum", url, version, error))?
         .text()
         .await
-        .map_err(|e| format!("Failed to read the checksum file: {e}"))?;
+        .map_err(|error| format!("Failed to read the checksum file: {error}"))?;
 
-    parse_checksum(&body)
-        .ok_or_else(|| "The published checksum file is not in a recognised format".to_string())
+    parse_checksum(&body).ok_or_else(|| {
+        format!(
+            "The published checksum file for {url} is not in a recognised format, so the download was not installed."
+        )
+    })
+}
+
+/// Turn a download failure into something the person reading it can act on.
+///
+/// The overwhelmingly common case before a first release is a 404: the app is
+/// newer than anything published, so there is no binary to fetch yet. Saying
+/// "HTTP status client error (404 Not Found)" leaves the user stuck; saying why
+/// and offering the from-source path does not.
+fn describe_download_error(
+    what: &str,
+    subject: &str,
+    version: &str,
+    error: reqwest::Error,
+) -> String {
+    let from_source = FROM_SOURCE_HINT;
+
+    if error.status() == Some(reqwest::StatusCode::NOT_FOUND) {
+        return not_published_message(what, version);
+    }
+
+    if error.is_timeout() {
+        return format!(
+            "Timed out downloading the CLI {what} ({subject}). Check the network, then retry. {from_source}"
+        );
+    }
+
+    if error.is_connect() {
+        return format!(
+            "Could not reach GitHub to download the CLI {what} ({subject}). Check the network, then retry. {from_source}"
+        );
+    }
+
+    format!("Failed to download the CLI {what} ({subject}): {error}")
+}
+
+const FROM_SOURCE_HINT: &str =
+    "Build it locally instead: `cargo build --release -p ssh-thing-cli`.";
+
+/// The message for "this version has no published CLI asset".
+///
+/// Split out from [`describe_download_error`] because it is the guaranteed
+/// state of the world until the first release carrying CLI binaries exists, and
+/// it is the one download failure a user is most likely to meet.
+fn not_published_message(what: &str, version: &str) -> String {
+    format!(
+        "No CLI {what} is published for version {version} yet, so nothing was installed. \
+Release assets only exist after the release workflow finishes for that version. {FROM_SOURCE_HINT}"
+    )
 }
 
 /// Extract the SHA-256 out of a published checksum file.
@@ -412,6 +468,17 @@ mod tests {
         assert!(needs_update(true, Some("1.1.33"), "1.1.34"));
         // Installed but unreadable: offer a reinstall rather than claiming it is current.
         assert!(needs_update(true, None, "1.1.34"));
+    }
+
+    #[test]
+    fn missing_published_assets_explain_themselves() {
+        // A 404 is the guaranteed state until a release carries CLI binaries,
+        // so its wording is load-bearing: it has to say why, and what to do.
+        let message = not_published_message("checksum", "1.1.33");
+        assert!(message.contains("published"));
+        assert!(message.contains("1.1.33"));
+        assert!(message.contains("cargo build --release -p ssh-thing-cli"));
+        assert!(message.contains("nothing was installed"));
     }
 
     #[test]

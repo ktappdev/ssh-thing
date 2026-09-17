@@ -292,6 +292,111 @@ pub fn mismatch_payload(denial: &HostKeyDenial) -> HostKeyMismatch {
     }
 }
 
+/// Machine-readable reason a run failed, plus what the user should do next.
+///
+/// Callers that only have prose (an OS error, a russh error, a timeout) still
+/// need to say *which* kind of failure this was and what to try, otherwise
+/// "Connection refused (os error 61)" is a dead end for anyone who does not
+/// already know what it means.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunFailure {
+    pub code: &'static str,
+    pub hint: &'static str,
+}
+
+/// Classify a failed run by its message.
+///
+/// Matching is by substring against text this module and [`connect`] produce,
+/// which is why the two live together. Order matters: "Command timed out" is
+/// checked before the generic "timed out", or every command timeout would be
+/// reported as a connect timeout.
+pub fn classify_run_failure(message: &str) -> RunFailure {
+    let lower = message.to_lowercase();
+    let has = |needle: &str| lower.contains(needle);
+
+    let (code, hint) = if has("unknown host key") {
+        (
+            "host_key_unknown",
+            "The host key has not been approved yet, so nothing was sent to the server. Open SSH THING, connect to this server once and approve the key, then retry.",
+        )
+    } else if has("host key mismatch") {
+        (
+            "host_key_mismatch",
+            "The server presented a different key than the one on record. If the server was rebuilt this is expected: remove its entry from known hosts in SSH THING and reconnect once to re-approve it. Otherwise stop and check the host.",
+        )
+    } else if has("command timed out") {
+        (
+            "command_timed_out",
+            "The command outlived its timeout. Raise --timeout (max 600s), or make the snippet non-interactive: the CLI has no PTY, so anything that waits for a password prompt or a pager can only hang. Use NOPASSWD sudo or key authentication.",
+        )
+    } else if has("terminated by signal") {
+        (
+            "command_signalled",
+            "The remote command was killed by a signal before it finished. Check the snippet's output and the server's logs.",
+        )
+    } else if has("command exited with status")
+        || has("without reporting an exit status")
+        || has("without an exit status")
+    {
+        (
+            "command_failed",
+            "The snippet ran and the remote command failed. Read data.output and data.exit_code: the connection and authentication worked, so only the command needs attention.",
+        )
+    } else if has("password authentication failed")
+        || has("key authentication failed")
+        || has("failed to decode private key")
+        || has("authentication failed")
+    {
+        (
+            "auth_failed",
+            "The server rejected the stored credential. Update the saved password or private key in SSH THING, then retry.",
+        )
+    } else if has("keyring get failed") || has("keyring entry failed") {
+        if has("no matching entry") || has("noentry") || has("not found") || has("does not exist") {
+            (
+                "credential_missing",
+                "No saved credential was found for this server, so authentication could not even be attempted. Save the password or key again in SSH THING.",
+            )
+        } else {
+            (
+                "credential_unavailable",
+                "The credential could not be read from the OS keychain. If this is not a local login session, run `ssh-thing doctor` and set the SSH_THING_SECRET_* variable it names for this server.",
+            )
+        }
+    } else if has("connection refused") {
+        (
+            "unreachable",
+            "The host refused the connection. The server may be down, paused, suspended, or still booting, or the port may be wrong. Nothing was executed.",
+        )
+    } else if has("failed to lookup address")
+        || has("name or service not known")
+        || has("nodename nor servname")
+        || has("no address associated")
+    {
+        (
+            "dns_failed",
+            "The hostname could not be resolved. Check the address saved for this server in SSH THING.",
+        )
+    } else if has("network is unreachable") || has("no route to host") || has("host is down") {
+        (
+            "unreachable",
+            "The host could not be reached over the network. It may be offline, firewalled, or only reachable from a different network (a VPN or Tailscale, for example). Nothing was executed.",
+        )
+    } else if has("timed out after") {
+        (
+            "connect_timeout",
+            "The host did not answer within its connect timeout. Check that the server is running and reachable, or raise the timeout saved for it in SSH THING.",
+        )
+    } else {
+        (
+            "run_failed",
+            "Run `ssh-thing doctor` for local state, then confirm the server is reachable and its host key is approved in SSH THING.",
+        )
+    };
+
+    RunFailure { code, hint }
+}
+
 /// Convenience wrapper: connect to a saved server with fail-closed host keys.
 pub async fn connect_saved_server(
     app_dir: &Path,
@@ -554,5 +659,84 @@ mod tests {
             }
             _ => panic!("wrong auth variant"),
         }
+    }
+
+    #[test]
+    fn real_failure_messages_classify_to_specific_codes() {
+        // The exact strings observed from live runs: a refused connect, a DNS
+        // failure, and a connect timeout.
+        assert_eq!(
+            classify_run_failure("Failed to connect: Connection refused (os error 61)").code,
+            "unreachable"
+        );
+        assert_eq!(
+            classify_run_failure(
+                "Failed to connect: failed to lookup address information: nodename nor servname provided, or not known"
+            )
+            .code,
+            "dns_failed"
+        );
+        assert_eq!(
+            classify_run_failure("Failed to connect: timed out after 5 seconds").code,
+            "connect_timeout"
+        );
+    }
+
+    #[test]
+    fn command_timeout_is_not_reported_as_a_connect_timeout() {
+        assert_eq!(
+            classify_run_failure("Command timed out after 30 seconds").code,
+            "command_timed_out"
+        );
+    }
+
+    #[test]
+    fn credential_and_command_failures_are_distinguished() {
+        assert_eq!(
+            classify_run_failure("Password authentication failed").code,
+            "auth_failed"
+        );
+        assert_eq!(
+            classify_run_failure("keyring get failed: No matching entry found in secure storage")
+                .code,
+            "credential_missing"
+        );
+        assert_eq!(
+            classify_run_failure("keyring get failed: user interaction not allowed").code,
+            "credential_unavailable"
+        );
+        assert_eq!(
+            classify_run_failure("Command exited with status 2").code,
+            "command_failed"
+        );
+        assert_eq!(
+            classify_run_failure("Command terminated by signal SIGKILL: ").code,
+            "command_signalled"
+        );
+    }
+
+    #[test]
+    fn host_key_failures_keep_separate_codes() {
+        assert_eq!(
+            classify_run_failure(
+                "Unknown host key for github.com:22 (ssh-ed25519, SHA256:abc) — refusing to connect."
+            )
+            .code,
+            "host_key_unknown"
+        );
+        assert_eq!(
+            classify_run_failure(
+                "Host key mismatch for example.com:22 — refusing to connect. Stored SHA256:old"
+            )
+            .code,
+            "host_key_mismatch"
+        );
+    }
+
+    #[test]
+    fn unknown_failures_still_get_a_hint_rather_than_nothing() {
+        let fallback = classify_run_failure("something nobody anticipated");
+        assert_eq!(fallback.code, "run_failed");
+        assert!(fallback.hint.contains("doctor"));
     }
 }

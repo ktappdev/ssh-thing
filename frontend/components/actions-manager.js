@@ -308,7 +308,15 @@ export function initActionManager({ invoke, listen, getServers, showToast, showA
     try {
       await invoke("execute_action", { actionId });
     } catch (error) {
+      // `execute_action` emits `action-execution` events for everything it
+      // actually attempts, and the listener below reports those. Reaching this
+      // handler means it rejected before any event — a missing action or server
+      // — which used to leave the row stuck on "Starting remote execution..."
+      // with nothing shown.
       console.error("Action execution failed:", error);
+      state.running.delete(actionId);
+      renderActions();
+      showAlert("Action Failed", `"${action.name}" could not be started: ${error}`);
     }
   }
 

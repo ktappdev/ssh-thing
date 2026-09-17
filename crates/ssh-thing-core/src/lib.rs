@@ -16,9 +16,9 @@ pub use paths::{app_data_dir, app_data_dir_for, override_data_dir, APP_IDENTIFIE
 pub use secrets::{delete_secret, get_secret, put_secret};
 pub use settings::AutomationSettings;
 pub use ssh::{
-    append_capped, clamp_timeout, client_config, connect, connect_saved_server,
-    describe_connect_failure, disconnect_quiet, exec_command, find_known_host, CommandOutcome,
-    HostKeyDenial, StrictHostKeyHandler,
+    append_capped, clamp_timeout, classify_run_failure, client_config, connect,
+    connect_saved_server, describe_connect_failure, disconnect_quiet, exec_command,
+    find_known_host, CommandOutcome, HostKeyDenial, RunFailure, StrictHostKeyHandler,
 };
 pub use store::{
     append_cli_history_entry, append_history_entry, load_actions, load_cli_history,

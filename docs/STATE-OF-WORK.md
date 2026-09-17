@@ -87,14 +87,14 @@ Run and passing on the current tree:
 node --check frontend/main.js
 node --check frontend/components/automation-manager.js
 cargo fmt --all --check
-cargo test --workspace                                # 92 passed, 0 failed
+cargo test --workspace                                # 99 passed, 0 failed
 cargo clippy --workspace --all-targets -- -D warnings  # clean
 cargo build -p tauri-app                              # links
 cargo build --release -p ssh-thing-cli                # 3.99 MB binary
 ```
 
 `crates/ssh-thing-cli/tests/cli.rs` runs the real binary against a fixture data
-directory for 18 cases, with no network access: the automation gate refuses,
+directory for 19 cases, with no network access: the automation gate refuses,
 an unreadable `settings.json` refuses as `settings_unreadable`, unscoped
 snippets refuse, cross-server requests refuse, a snippet whose server vanished
 refuses, ambiguous and unknown selectors exit 1, `--dry-run` resolves without
@@ -116,10 +116,10 @@ check passes.
 
 ### Live run against the real data directory
 
-First execution of the CLI against
-`~/Library/Application Support/com.kentaylor.ssh-thing`. Read-only commands and
-pre-flight refusals only — **no snippet has been executed against a real
-server.** At the time of the run: 5 servers, 15 snippets, gate off, keychain
+The CLI was first executed against
+`~/Library/Application Support/com.kentaylor.ssh-thing` on **2026-09-17**. A
+read-only pass came first; then a snippet was scoped, the gate was turned on, and
+real runs followed. At the start: 5 servers, 15 snippets, gate off, keychain
 probe passing.
 
 | Check | Observed |
@@ -134,35 +134,84 @@ probe passing.
 | secret material on stdout | none: no `secret_id`, no `private_key`, no `password` |
 | argument errors | **defect found** — clap exited 2 with empty stdout; fixed in `1eb5b00` |
 
-Then the UI path was exercised for the first time. Scoping the `List` snippet to
-`server2` in a `npm run tauri dev` session was picked up by the CLI immediately:
-`snippets` reported `runnable: true`, `server_label: server2`, and `doctor` moved
-to `1 runnable of 15 total`. That is the whole curation chain — modal select →
-`saveSnippet` → store → CLI read — now verified end to end.
+Then the curation UI was exercised for the first time. Scoping `List` to
+`server2` in a `npm run tauri dev` session was picked up immediately: `snippets`
+reported `runnable: true`, `server_label: server2`, and `doctor` moved to
+`1 runnable of 15 total`. Turning on *Allow external automation* in the same
+panel took effect for the CLI with no restart. That is the whole chain — modal
+select → `saveSnippet` → store → CLI read, and toggle → `settings.json` → gate —
+now verified end to end.
 
-Three things to carry forward:
+### The first successful run (2026-09-17)
 
-- The automation gate is checked **before** selector resolution, so with
-  automation off an unknown snippet reports `automation_disabled`, not `usage`.
-- `--dry-run` is gated too. Resolving a run without connecting needs no
-  permission in principle; today it needs the toggle. Flagged as a candidate
-  change, not made.
-- The first CLI run against a real server will likely raise a macOS keychain
-  prompt, because the CLI is a different binary from the app that stored the
-  secret.
+`List` (`ls`, scoped to `server2`): exit 0, `status: success`, `exit_code: 0`,
+5645 ms for connect + auth + exec + disconnect, output bounded and clean.
+
+```text
+AGENTS.md
+apps
+cicd-thing-ecosystem.config.js
+ecosystem.config.js
+go
+howi-updated-node.txt
+logs
+lyricut-cli
+sample
+setup.sh
+snap
+```
+
+No ANSI escapes, no prompt echo, no pager artifacts — the argument for
+`exec_command(.., pty: None, ..)` holding up on a real host. `history` recorded
+`dry_run` then `success`, the second with output, neither with credential
+material.
+
+Guardrails against the same live data, all refusing without executing:
+
+| Case | Observed |
+|---|---|
+| `--server Server1` on a `server2` snippet | exit 3 `scope_mismatch`, naming both servers |
+| redundant correct `--server server2` | accepted, `ok: true` |
+| gate off, before the toggle | exit 3 `automation_disabled`, no connection |
+| `--snippet List` with a `list` duplicate present | exit 1 `usage`, ambiguous, lists both ids |
+
+### Failure handling checked live (2026-09-17)
+
+Every failure below reports a specific `error.code`, a plain-language
+`error.hint`, and the full report in `data`, and every one is written to
+`cli-history.json` rather than swallowed:
+
+| Failure | Live result |
+|---|---|
+| Command fails (`ls /missing`) | exit 2, `command_failed`, `exit_code: 2`, stderr captured in `data.output` |
+| Command outlives its timeout (`sleep 12`, `--timeout 5`) | exit 2, `command_timed_out`, `exit_code: null`, empty output, hint names the missing PTY |
+| Host refuses the connection (`127.0.0.1:1`) | exit 2, `unreachable` — "may be down, paused, suspended, or still booting… Nothing was executed." |
+| Hostname will not resolve | exit 2, `dns_failed`, hint points at the saved address |
+| Host never answers (unroutable address, 5s timeout) | exit 2, `connect_timeout` |
+
+Two surprises worth keeping:
+
+- **No macOS keychain prompt appeared.** The CLI is a different binary from the
+  app that stored server2's password, and it read the secret silently from a
+  normal logged-in terminal. Earlier notes predicted a prompt; that was wrong
+  for this machine. Treat silence as normal here, a prompt as possible elsewhere.
+- **`--snippet List` failed while `snippets` showed `List` as runnable.** Name
+  matching is case-insensitive only (`resolve_snippet`), so `List` and the
+  duplicate `list` collide and the run exits 1 as ambiguous. That is what the
+  spec says to do and the hint is good, but an agent reading `snippets` output
+  will trip on it. **Candidate change:** try an exact name match before falling
+  back to the case-insensitive scan. Not made.
 
 **Not verified — the honest gaps:**
 
-- No *successful* remote command through the CLI, and no snippet has been run
-  from the CLI at all. Every live-data check above stops before a connection.
-  `core::ssh::exec_command` is the same code path the desktop Actions use, so the
-  risk is low, but it is unproven.
-- **The Automation panel has still never been operated.** A snippet was scoped
-  in the dev app, but the `allow_external_automation` toggle has not been
-  flipped by a human, and Install CLI has never been pressed.
-- The installer has never downloaded a real asset: no release carries CLI
-  binaries yet. The first release with the new workflow will be the first real
-  test of `install_cli`.
+- One command has been run through the CLI (`ls`), on one server, over a key whose
+  host key was already approved from desktop use. Not yet seen live: an
+  **authentication failure**, a **host key mismatch**, a **missing credential**,
+  and an unknown host key reached through the CLI (that path is only proven
+  against `github.com:22`).
+- **Install CLI has never been pressed**, and the installer has never downloaded a
+  real asset: no release carries CLI binaries yet. Until a release does, the 404
+  now explains itself and suggests building from source.
 
 ## Open decisions
 
@@ -192,25 +241,19 @@ Three things to carry forward:
 
 ## Next steps, in recommended order
 
-1. **Finish the first end-to-end run.** The `List` snippet is scoped to
-   `server2` and the CLI can see it. What is left is the gate: header menu →
-   Automation → *Allow external automation*, then
-
-   ```bash
-   ./target/release/ssh-thing run --snippet List --dry-run   # resolve only
-   ./target/release/ssh-thing run --snippet List             # actually runs ls
-   ```
-
-   Expect a one-time macOS keychain prompt. This is the single most important
-   unverified path in the project, and flipping the toggle also exercises the
-   only guardrail the CLI obeys.
-2. **Cut the first release with CLI assets.** Bump the patch version so
+1. **The first end-to-end run is done** — see the sections above. What remains to
+   exercise by hand is failure quality, not plumbing: point a snippet at a host
+   with a wrong password to see `auth_failed`, and at a host whose key changed to
+   see `host_key_mismatch`. Everything else on that path is verified.
+2. **Delete the duplicate `list` snippet** (or scope it). Two snippets differing
+   only by case make `--snippet <name>` ambiguous, which is correct but annoying.
+3. **Cut the first release with CLI assets.** Bump the patch version so
    `build-cli` runs, confirm the three `ssh-thing_<version>_<platform>` assets and
    their `.sha256` files appear on the release, then use Install CLI for real.
    This turns `install_cli` from untested into tested, and it is what puts the
    Server dropdown and Automation panel in front of a normal user — the released
    1.1.33 build has neither.
-3. **Then decide D1** and, if Actions goes, remove it in its own commit.
+4. **Then decide D1** and, if Actions goes, remove it in its own commit.
 
 ## Things a fresh agent must not assume
 
