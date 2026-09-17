@@ -10,7 +10,7 @@ use serde::Serialize;
 use ssh_thing_core as core;
 use ssh_thing_core::model::{
     AuthMethod, CliHistoryEntry, SecretKind, ServerConnection, Snippet,
-    DEFAULT_COMMAND_TIMEOUT_SECONDS, MAX_COMMAND_TIMEOUT_SECONDS, MIN_COMMAND_TIMEOUT_SECONDS,
+    DEFAULT_COMMAND_TIMEOUT_SECONDS,
 };
 
 use crate::output::CliError;
@@ -316,8 +316,17 @@ pub struct RunRequest<'a> {
 /// caller still prints one complete JSON document. Only pre-flight problems
 /// (gate closed, unknown snippet, cross-server request) are `Failure`s.
 pub async fn run(app_dir: &Path, request: RunRequest<'_>) -> Result<(RunReport, i32), Failure> {
-    let settings =
-        core::AutomationSettings::load(app_dir).map_err(|e| Failure::failed("read_failed", e))?;
+    // The gate file is policy, not run state: if it cannot be read, refuse like
+    // a closed gate (exit 3) instead of reporting a failed run.
+    let settings = core::AutomationSettings::load(app_dir).map_err(|error| {
+        Failure::blocked(
+            "settings_unreadable",
+            format!("The SSH THING settings file could not be read: {error}"),
+        )
+        .with_hint(
+            "Run `ssh-thing doctor` to inspect the data directory, or delete settings.json to reset automation to its default (off).",
+        )
+    })?;
     if !settings.allow_external_automation {
         return Err(Failure::blocked(
             "automation_disabled",
@@ -387,8 +396,7 @@ pub async fn run(app_dir: &Path, request: RunRequest<'_>) -> Result<(RunReport, 
     let requested_timeout = request
         .timeout_seconds
         .unwrap_or(DEFAULT_COMMAND_TIMEOUT_SECONDS);
-    let timeout_seconds =
-        requested_timeout.clamp(MIN_COMMAND_TIMEOUT_SECONDS, MAX_COMMAND_TIMEOUT_SECONDS);
+    let timeout_seconds = core::clamp_timeout(requested_timeout);
     let timeout_clamped = timeout_seconds != requested_timeout;
 
     let mut report = RunReport {
@@ -448,7 +456,15 @@ pub async fn run(app_dir: &Path, request: RunRequest<'_>) -> Result<(RunReport, 
         }
         Err(message) => {
             report.status = "error";
-            report.error = Some(message);
+            // The CLI never allocates a PTY, so this failure mode has one
+            // overwhelmingly likely cause and the agent can act on it alone.
+            report.error = Some(if message.starts_with("Command timed out") {
+                format!(
+                    "{message}. The CLI runs without a PTY, so a command that waits for a password prompt can only hang until the timeout. Use sudo with NOPASSWD, or key-based authentication, for CLI-runnable snippets."
+                )
+            } else {
+                message
+            });
             EXIT_FAILED
         }
     };
@@ -603,7 +619,11 @@ pub struct DoctorReport {
     pub automation_enabled: bool,
     pub keyring_override_variables: Vec<String>,
     pub checks: Vec<Check>,
+    /// Every check except `external_automation` passed.
     pub healthy: bool,
+    /// `healthy` **and** the automation gate is on. This is the one field an
+    /// agent should branch on to decide whether `run` will work.
+    pub runnable: bool,
 }
 
 pub fn doctor(app_dir: &Path) -> DoctorReport {
@@ -614,18 +634,26 @@ pub fn doctor(app_dir: &Path) -> DoctorReport {
         ok: true,
         detail: app_dir.display().to_string(),
     });
-    checks.push(match core::load_servers(app_dir) {
-        Ok(servers) => Check {
-            name: "servers_load",
-            ok: true,
-            detail: format!("{} server(s)", servers.len()),
-        },
-        Err(error) => Check {
-            name: "servers_load",
-            ok: false,
-            detail: error,
-        },
-    });
+    // Loaded once and reused: the check, the override list, and the automation
+    // status all need this file, and a second read could disagree with the first.
+    let servers = match core::load_servers(app_dir) {
+        Ok(servers) => {
+            checks.push(Check {
+                name: "servers_load",
+                ok: true,
+                detail: format!("{} server(s)", servers.len()),
+            });
+            servers
+        }
+        Err(error) => {
+            checks.push(Check {
+                name: "servers_load",
+                ok: false,
+                detail: error,
+            });
+            Vec::new()
+        }
+    };
 
     checks.push(match core::load_snippets(app_dir) {
         Ok(snippets) => {
@@ -674,7 +702,22 @@ pub fn doctor(app_dir: &Path) -> DoctorReport {
         },
     });
 
-    let settings = core::AutomationSettings::load(app_dir).unwrap_or_default();
+    // A corrupt settings file must be visible rather than silently defaulted:
+    // it is the file that holds the automation gate.
+    let loaded_settings = core::AutomationSettings::load(app_dir);
+    checks.push(match &loaded_settings {
+        Ok(_) => Check {
+            name: "settings_load",
+            ok: true,
+            detail: "settings.json parsed".to_string(),
+        },
+        Err(error) => Check {
+            name: "settings_load",
+            ok: false,
+            detail: error.clone(),
+        },
+    });
+    let settings = loaded_settings.unwrap_or_default();
     checks.push(Check {
         name: "external_automation",
         ok: settings.allow_external_automation,
@@ -685,8 +728,7 @@ pub fn doctor(app_dir: &Path) -> DoctorReport {
         },
     });
 
-    let override_variables = core::load_servers(app_dir)
-        .unwrap_or_default()
+    let override_variables = servers
         .iter()
         .filter_map(|server| match &server.auth {
             AuthMethod::SecretRef { secret_id, .. } => Some(core::secrets::env_var_name(secret_id)),
@@ -699,6 +741,10 @@ pub fn doctor(app_dir: &Path) -> DoctorReport {
         .filter(|check| check.name != "external_automation")
         .all(|check| check.ok);
 
+    // `healthy` deliberately ignores the gate so a clean install with
+    // automation off still reads as healthy. Agents should branch on `runnable`.
+    let runnable = healthy && settings.allow_external_automation;
+
     DoctorReport {
         cli_version: core::VERSION,
         app_version: settings.app_version,
@@ -708,6 +754,7 @@ pub fn doctor(app_dir: &Path) -> DoctorReport {
         keyring_override_variables: override_variables,
         checks,
         healthy,
+        runnable,
     }
 }
 
@@ -734,6 +781,10 @@ pub fn human_doctor(report: &DoctorReport) -> Vec<String> {
             } else {
                 "disabled"
             }
+        ),
+        format!(
+            "Runnable now: {}",
+            if report.runnable { "yes" } else { "no" }
         ),
         String::new(),
     ];

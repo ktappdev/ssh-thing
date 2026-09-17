@@ -1,6 +1,6 @@
 # SSH Thing CLI for LLMs — Design Spec
 
-**Status: implemented, uncommitted, not yet released.** The CLI exists at
+**Status: implemented and committed; not yet released.** The CLI exists at
 `crates/ssh-thing-cli` (binary `ssh-thing`), shares `crates/ssh-thing-core` with
 the desktop app, and is gated by the desktop app's Automation panel. What has
 not happened: no release carries a CLI binary yet, and no successful remote
@@ -41,6 +41,9 @@ from that menu.
 - No port forwarding or tunnels.
 - No jump-host chaining beyond what the saved server already defines.
 - No snippet editing from the CLI.
+- Passphrase-protected private keys. The stored key must be unencrypted; the
+  desktop app and the CLI both pass no passphrase to `decode_secret_key`, so a
+  protected key fails identically in both.
 - No Windows install flow (the CLI compiles on Windows but is not published).
 
 ## 3. Shipped surface
@@ -89,8 +92,8 @@ optional `hint`:
 A run that executed and failed sets `ok: false` **and** still populates `data`
 with the full report, so the caller can read the output, exit code, and error
 while branching on `ok`. Error codes in use: `usage`, `read_failed`,
-`app_data_dir`, `automation_disabled`, `not_scoped`, `scope_mismatch`,
-`server_missing`, `run_failed`, `clock_error`.
+`app_data_dir`, `automation_disabled`, `settings_unreadable`, `not_scoped`,
+`scope_mismatch`, `server_missing`, `run_failed`, `clock_error`.
 
 ### Exit codes
 
@@ -132,7 +135,20 @@ while branching on `ok`. Error codes in use: `usage`, `read_failed`,
   cross-server execution is refused with `scope_mismatch`.
 - `--server` is never used to *pick* a server for an unscoped snippet.
 - Timeout defaults to 60s and is clamped to 5–600s; `timeout_clamped` reports
-  when the requested value was adjusted.
+  when the requested value was adjusted. The clamp lives in
+  `core::ssh::clamp_timeout` and is the same one `exec_command` applies, so the
+  CLI and the desktop Actions editor (`min="5"`, `max="600"`) cannot disagree.
+- A command killed by the timeout comes back with an error that names the cause:
+  the CLI allocates no PTY, so a command waiting on a password prompt can only
+  hang until the timeout. Snippets intended for CLI use should rely on
+  `NOPASSWD` sudo or key authentication.
+- An unreadable `settings.json` is a policy refusal, not a run failure: it
+  exits 3 with `settings_unreadable` and a hint, rather than being silently
+  defaulted or reported as `run_failed`.
+- `doctor` separates `healthy` (every check except the gate passed) from
+  `runnable` (`healthy` **and** the automation gate is on). Agents should branch
+  on `runnable`; `healthy` stays true with automation off so a clean install
+  still reads as a clean install.
 - Output is capped at 64 KiB (one shared constant with the desktop action
   runner) and the cap appends `[output truncated]` once, with
   `output_truncated: true`.
@@ -246,6 +262,7 @@ automation setting alone.
 | D4 | `run` flag shape | `--snippet` required; `--server` optional and validated against the snippet's scope. |
 | D5 | Destructive approval | Not in v1. The master toggle is the gate. |
 | D6 | Download source | GitHub Releases, with published `.sha256`. R2 remains a possible future mirror. |
+| D7 | Homebrew cask gated on the CLI build | **Keep the gate.** `update-homebrew` still needs `[build, build-cli]`, so the cask moves only when the release is complete. A CLI build failure therefore delays the Homebrew update but never publishes a partial release; the DMGs and the GitHub Release are unaffected. |
 
 ## 11. Remaining gaps
 

@@ -19,7 +19,7 @@ use tokio::time::{timeout, Duration};
 
 use crate::model::{
     AuthMethod, HostKeyMismatch, KnownHost, SecretKind, DEFAULT_CONNECT_TIMEOUT_SECONDS,
-    MAX_OUTPUT_BYTES, TRUNCATION_MARKER,
+    MAX_COMMAND_TIMEOUT_SECONDS, MAX_OUTPUT_BYTES, MIN_COMMAND_TIMEOUT_SECONDS, TRUNCATION_MARKER,
 };
 use crate::secrets;
 use crate::store;
@@ -433,7 +433,7 @@ pub async fn exec_command<H: Handler>(
 
     match timeout_seconds {
         Some(seconds) => {
-            let limited = Duration::from_secs(seconds.max(1));
+            let limited = Duration::from_secs(clamp_timeout(seconds));
             timeout(limited, collect_command_output(&mut channel))
                 .await
                 .map_err(|_| format!("Command timed out after {} seconds", limited.as_secs()))?
@@ -442,9 +442,13 @@ pub async fn exec_command<H: Handler>(
     }
 }
 
-/// Clamp a CLI-supplied timeout into the supported window.
+/// Clamp a requested command timeout into the supported window.
+///
+/// The lower bound matches the desktop Actions form (`min="5"`), so the app and
+/// the CLI agree on what a usable timeout is. This is the one clamp both
+/// `exec_command` and the CLI apply; there is no second copy to drift.
 pub fn clamp_timeout(requested: u64) -> u64 {
-    requested.clamp(1, crate::model::MAX_COMMAND_TIMEOUT_SECONDS)
+    requested.clamp(MIN_COMMAND_TIMEOUT_SECONDS, MAX_COMMAND_TIMEOUT_SECONDS)
 }
 
 #[cfg(test)]
@@ -529,12 +533,10 @@ mod tests {
 
     #[test]
     fn clamp_timeout_keeps_requested_within_bounds() {
-        assert_eq!(clamp_timeout(1), 1);
+        assert_eq!(clamp_timeout(0), MIN_COMMAND_TIMEOUT_SECONDS);
+        assert_eq!(clamp_timeout(1), MIN_COMMAND_TIMEOUT_SECONDS);
         assert_eq!(clamp_timeout(60), 60);
-        assert_eq!(
-            clamp_timeout(10_000),
-            crate::model::MAX_COMMAND_TIMEOUT_SECONDS
-        );
+        assert_eq!(clamp_timeout(10_000), MAX_COMMAND_TIMEOUT_SECONDS);
     }
 
     #[test]

@@ -137,6 +137,8 @@ command, which §4a independently forces.
 ### Gates, in evaluation order for `run`
 
 1. `settings.json` → `allow_external_automation` must be true, else exit 3.
+   If the file cannot be parsed at all, this step refuses with
+   `settings_unreadable` rather than falling back to a default.
 2. Resolve the snippet by id-then-unique-name, else exit 1.
 3. The snippet must carry a `server_id`, else exit 3 (`not_scoped`).
 4. If `--server` was supplied it must match that `server_id`, else exit 3
@@ -152,14 +154,14 @@ command, which §4a independently forces.
 node --check frontend/main.js
 node --check frontend/components/automation-manager.js
 cargo fmt --all --check
-cargo test --workspace                                   # 85 passed
+cargo test --workspace                                   # 89 passed
 cargo clippy --workspace --all-targets -- -D warnings     # clean
 cargo build -p tauri-app                                  # links
 cargo build --release -p ssh-thing-cli                    # 3.99 MB
 ```
 
-Test distribution: 40 in `tauri-app` (pre-existing suite, unchanged and still
-passing against core types), 25 in `ssh-thing-core`, 8 unit + 12 integration in
+Test distribution: 41 in `tauri-app` (pre-existing suite, unchanged and still
+passing against core types), 25 in `ssh-thing-core`, 8 unit + 15 integration in
 `ssh-thing-cli`.
 
 `crates/ssh-thing-cli/tests/cli.rs` invokes the compiled binary through
@@ -209,6 +211,38 @@ therefore always absent and `Option<String>` resolved to `None`, so every
 password/key save generated a **new** keychain entry and orphaned the previous
 one. Fixed at both call sites. It was the only snake_case/camelCase mismatch in
 the frontend; all other multi-word arguments already used camelCase.
+
+### Hardening pass (post-review)
+
+Six defects were found by reviewing the finished implementation against the
+spec, and fixed. None of them changed the design; each removed a way the code
+could disagree with its own documentation or hand a caller a wrong answer.
+
+| # | Defect | Fix |
+|---|---|---|
+| 1 | **Two timeout clamps disagreed.** `commands.rs` clamped 5–600 inline; `core::ssh::clamp_timeout` clamped 1–600 and was exported but never called. | `clamp_timeout` is now the single rule (5–600, using the model constants) and `exec_command` applies it too. The CLI's inline clamp and its now-unused constant imports were deleted. The 5s floor matches the desktop Actions input (`min="5"`), so no desktop behaviour changed. |
+| 2 | **Wrong doc comment.** `store::load_cli_history` claimed to return newest-first; it returns written order and `commands::history` reverses it. | Comment corrected; code untouched. |
+| 3 | **A corrupt `settings.json` exited 2 as `read_failed`.** The gate file is policy, not run state, and a silent default would have hidden a broken gate. | Exits 3 as `settings_unreadable` with a `doctor` hint. `doctor` also gained a `settings_load` check so the condition is visible without attempting a run. |
+| 4 | **`cli_status.update_available` was true with nothing installed,** because `None != Some(v)`. The UI masked it; API consumers did not. | `needs_update(installed, installed_version, expected)` — false when not installed, true when installed but stale *or* unreadable. Unit-tested exhaustively. |
+| 5 | **`doctor` read `servers.json` twice** to build the check and the override-variable list, so the two could disagree. | Loaded once and reused. |
+| 6 | **The checksum parser took the first whitespace token,** which only works for GNU `sha256sum` output. A BSD `SHA256 (file) = <hash>` file would have been rejected as malformed. | `parse_checksum` scans tokens for the first 64-hex value instead. Both formats unit-tested. |
+
+Two smaller additions came out of the same pass:
+
+- **`doctor.runnable`** = `healthy && automation_enabled`. `healthy` deliberately
+excludes the gate, so an agent previously needed two fields and a conjunction to
+answer "will `run` work". Now it needs one.
+- **Actionable timeout errors.** A timeout in the CLI now appends the reason: no
+PTY is allocated, so a password-prompting command can only hang. The hint is
+added in `commands.rs`, not in `core::ssh::exec_command`, so the desktop's
+timeout text (which *does* allocate a PTY) is unchanged.
+
+Verified after the pass: `cargo fmt --all --check`, 89 tests, `clippy -D warnings`
+clean, both binaries build, and three behaviours checked by hand against the
+release binary with a fixture data directory — `--timeout 1` reports
+`timeout_seconds: 5` with `timeout_clamped: true`; `settings.json` containing
+`null` exits 3 with `settings_unreadable`; `doctor --human` prints
+`Runnable now: no` with the gate off while every other check passes.
 
 ## 6. Remaining gaps
 

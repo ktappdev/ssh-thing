@@ -242,7 +242,8 @@ pub fn get_cli_history_path(app_dir: &Path) -> PathBuf {
     path_in(app_dir, CLI_HISTORY_FILE)
 }
 
-/// Returns the newest-first history list.
+/// Returns the history list in written order — oldest first. Callers that want
+/// newest-first (like `ssh-thing history`) reverse it explicitly.
 pub fn load_cli_history(app_dir: &Path) -> Result<Vec<CliHistoryEntry>, String> {
     read_array(app_dir, CLI_HISTORY_FILE, "cli history")
 }

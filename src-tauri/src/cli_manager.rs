@@ -136,6 +136,8 @@ pub async fn cli_status(app: AppHandle) -> Result<CliStatus, String> {
     let installed_path = candidates.into_iter().find(|candidate| candidate.is_file());
 
     let installed_version = installed_path.as_deref().and_then(probe_version);
+    let installed = installed_path.is_some();
+    let update_available = needs_update(installed, installed_version.as_deref(), &version);
 
     let (asset, url) = match platform {
         Some(platform) => {
@@ -153,9 +155,9 @@ pub async fn cli_status(app: AppHandle) -> Result<CliStatus, String> {
         unsupported_reason: platform.is_none().then(unsupported_reason),
         asset_name: asset,
         download_url: url,
-        installed: installed_path.is_some(),
+        installed,
         path: installed_path.map(|value| value.display().to_string()),
-        update_available: installed_version.as_deref() != Some(version.as_str()),
+        update_available,
         version: installed_version,
         on_path: directory_on_path(&dir),
         install_dir: dir.display().to_string(),
@@ -272,6 +274,15 @@ pub fn stamp_app_version(app_dir: &Path, version: &str) -> Result<(), String> {
     settings.save(app_dir)
 }
 
+/// Whether the app should offer to install or update.
+///
+/// Comparing versions alone would report "update available" on a machine with
+/// no CLI installed at all. An installed binary that cannot report its own
+/// version also needs attention, so that counts as needing an update.
+fn needs_update(installed: bool, installed_version: Option<&str>, expected: &str) -> bool {
+    installed && installed_version != Some(expected)
+}
+
 fn recorded_path(settings: &AutomationSettings) -> Option<PathBuf> {
     settings.cli_install_path.as_ref().map(PathBuf::from)
 }
@@ -288,11 +299,19 @@ async fn fetch_checksum(client: &reqwest::Client, url: &str) -> Result<String, S
         .await
         .map_err(|e| format!("Failed to read the checksum file: {e}"))?;
 
-    body.split_whitespace()
-        .next()
-        .map(|value| value.trim().to_lowercase())
-        .filter(|value| value.len() == 64 && value.chars().all(|ch| ch.is_ascii_hexdigit()))
+    parse_checksum(&body)
         .ok_or_else(|| "The published checksum file is not in a recognised format".to_string())
+}
+
+/// Extract the SHA-256 out of a published checksum file.
+///
+/// Tokens are scanned for the first 64-hex value rather than taking the first
+/// token, so both the GNU form (`<hash>  <file>`, which the release workflow
+/// publishes) and the BSD form (`SHA256 (file) = <hash>`) parse.
+fn parse_checksum(body: &str) -> Option<String> {
+    body.split_whitespace()
+        .map(|value| value.trim().to_lowercase())
+        .find(|value| value.len() == 64 && value.chars().all(|ch| ch.is_ascii_hexdigit()))
 }
 
 #[cfg(unix)]
@@ -372,17 +391,27 @@ mod tests {
     }
 
     #[test]
-    fn checksum_parser_accepts_shasum_format() {
-        let line = "AABBCCDDEEFF00112233445566778899AABBCCDDEEFF00112233445566778899  ssh-thing_1.1.34_linux-x64\n";
-        let parsed = line
-            .split_whitespace()
-            .next()
-            .map(|value| value.trim().to_lowercase())
-            .filter(|value| value.len() == 64 && value.chars().all(|ch| ch.is_ascii_hexdigit()));
-        assert_eq!(
-            parsed.as_deref(),
-            Some("aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899")
-        );
+    fn checksum_parser_accepts_gnu_and_bsd_formats() {
+        const HASH: &str = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899";
+
+        let gnu = "AABBCCDDEEFF00112233445566778899AABBCCDDEEFF00112233445566778899  ssh-thing_1.1.34_linux-x64\n";
+        assert_eq!(parse_checksum(gnu).as_deref(), Some(HASH));
+
+        let bsd = "SHA256 (ssh-thing_1.1.34_linux-x64) = AABBCCDDEEFF00112233445566778899AABBCCDDEEFF00112233445566778899\n";
+        assert_eq!(parse_checksum(bsd).as_deref(), Some(HASH));
+
+        assert_eq!(parse_checksum("not a checksum file"), None);
+        assert_eq!(parse_checksum(""), None);
+    }
+
+    #[test]
+    fn update_is_only_offered_when_installed_and_stale() {
+        assert!(!needs_update(false, None, "1.1.34"));
+        assert!(!needs_update(false, Some("1.1.33"), "1.1.34"));
+        assert!(!needs_update(true, Some("1.1.34"), "1.1.34"));
+        assert!(needs_update(true, Some("1.1.33"), "1.1.34"));
+        // Installed but unreadable: offer a reinstall rather than claiming it is current.
+        assert!(needs_update(true, None, "1.1.34"));
     }
 
     #[test]

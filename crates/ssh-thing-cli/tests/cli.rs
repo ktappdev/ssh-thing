@@ -327,6 +327,63 @@ fn unknown_and_ambiguous_selectors_are_usage_errors() {
 }
 
 #[test]
+fn run_refuses_when_the_settings_file_is_unreadable() {
+    let fixture = Fixture::new("settings-corrupt", true);
+    // Valid JSON that is not a settings object: the gate file is unreadable.
+    write(&fixture.dir.join("settings.json"), "null");
+
+    let output = fixture.run(&["run", "--snippet", "snip-alpha"]);
+    assert_eq!(exit_code(&output), 3);
+
+    let body = envelope(&output);
+    assert_eq!(error_code(&body), "settings_unreadable");
+    assert!(body["error"]["hint"]
+        .as_str()
+        .expect("hint")
+        .contains("doctor"));
+    assert!(body["data"].is_null());
+}
+
+#[test]
+fn timeout_floor_is_clamped_and_reported() {
+    let fixture = Fixture::new("timeout-floor", true);
+
+    let output = fixture.run(&[
+        "run",
+        "--snippet",
+        "snip-alpha",
+        "--dry-run",
+        "--timeout",
+        "1",
+    ]);
+    assert_eq!(exit_code(&output), 0);
+
+    let body = envelope(&output);
+    assert_eq!(body["data"]["timeout_seconds"], 5);
+    assert_eq!(body["data"]["timeout_clamped"], Value::Bool(true));
+}
+
+#[test]
+fn doctor_never_reports_runnable_while_the_gate_is_off() {
+    let fixture = Fixture::new("doctor-gate", false);
+
+    let output = fixture.run(&["doctor"]);
+    assert_eq!(exit_code(&output), 0);
+
+    let body = envelope(&output);
+    assert_eq!(body["data"]["automation_enabled"], Value::Bool(false));
+    assert_eq!(body["data"]["runnable"], Value::Bool(false));
+    assert_eq!(body["data"]["data_dir_overridden"], Value::Bool(true));
+
+    let checks = body["data"]["checks"].as_array().expect("checks");
+    let settings_check = checks
+        .iter()
+        .find(|check| check["name"] == "settings_load")
+        .expect("settings_load check present");
+    assert_eq!(settings_check["ok"], Value::Bool(true));
+}
+
+#[test]
 fn version_reports_the_schema_and_rejects_nothing() {
     let fixture = Fixture::new("version", false);
     let output = fixture.run(&["version"]);
