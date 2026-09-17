@@ -299,25 +299,11 @@ struct AppState {
 - **xterm-addon-fit**: Terminal auto-resize
 - **xterm-addon-search**: Terminal search
 
-<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
-## Beads Issue Tracker
+## Task Tracking
 
-This project uses **br (beads)** for issue tracking. Run `br prime` to see full workflow context and commands.
-
-### Quick Reference
-
-```bash
-br ready              # Find available work
-br show <id>          # View issue details
-br update <id> --claim  # Claim work
-br close <id>         # Complete work
-```
-
-### Rules
-
-- Use `br` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
-- Run `br prime` for detailed command reference and session close protocol
-- Use `br remember` for persistent knowledge — do NOT use MEMORY.md files
+There is no external issue tracker. For multi-step work, use the `todo` tool and
+say so in your reply. Durable state and open questions belong in
+`docs/STATE-OF-WORK.md`, which the next session reads first.
 
 ## Session Completion
 
@@ -325,13 +311,12 @@ br close <id>         # Complete work
 
 **MANDATORY WORKFLOW:**
 
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
+1. **Record remaining work** - Open decisions, action items, and next steps go in `docs/STATE-OF-WORK.md`
 2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
+3. **Update `docs/STATE-OF-WORK.md`** - What landed, what is unverified, what is still open
 4. **PUSH TO REMOTE** - This is MANDATORY:
    ```bash
    git pull --rebase
-   br dolt push
    git push
    git status  # MUST show "up to date with origin"
    ```
@@ -344,4 +329,3 @@ br close <id>         # Complete work
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
-<!-- END BEADS INTEGRATION -->

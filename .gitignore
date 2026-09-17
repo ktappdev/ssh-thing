@@ -30,8 +30,4 @@ release-builds/
 *.sln
 *.sw?
 
-# Beads / Dolt files (added by bd init)
-.dolt/
-*.db
-.beads-credential-key
 .pi/agent-sessions/

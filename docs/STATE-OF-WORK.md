@@ -131,9 +131,6 @@ check passes.
    into a session transcript. The value is deliberately not recorded in these
    docs. Rotate it.
 2. **Traps in this environment:**
-   - `br` (beads) is **not installed**, although `AGENTS.md` mandates it for all
-     task tracking. Do not follow that instruction blindly here — it fails with
-     `command not found`. Install `br`, or use the `todo` tool and say so.
    - `release-builds/` contains **1.1.32** DMGs while `package.json` is
      **1.1.33**. Stale; not the current artifacts.
    - `docs/PRD-Automatic-Updates.md` and `docs/feature-research-roadmap-2026-03-06.md`
