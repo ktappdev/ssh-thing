@@ -1,6 +1,6 @@
 # Scoped Snippets Implementation Record
 
-Status: **implemented, uncommitted, not yet run in the app.**
+Status: **implemented and committed (`d2379ad`), never run in the app.**
 See `docs/STATE-OF-WORK.md` for the current working-tree state and open
 decisions (including whether Actions gets removed).
 

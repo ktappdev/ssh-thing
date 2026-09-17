@@ -46,7 +46,7 @@ npm run tauri build -- --target x86_64-unknown-linux-gnu  # Linux
 
 | File | Purpose |
 |---|---|
-| `docs/STATE-OF-WORK.md` | **Entry point.** Live state, uncommitted work, open decisions, traps. |
+| `docs/STATE-OF-WORK.md` | **Entry point.** Live state, open decisions, traps. |
 | `docs/CLI-FOR-LLMS.md` | Product spec for the LLM CLI. Implemented, unreleased. |
 | `docs/CLI-KNOWLEDGE-BASE.md` | CLI engineering ground truth and implementation record. |
 | `FEATURE_SCOPED_SNIPPETS.md` | Server-scoped snippets implementation record. |

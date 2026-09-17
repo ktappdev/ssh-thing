@@ -4,16 +4,22 @@
 repository. If you are picking the project up cold, this file tells you where
 things stand.
 
-Last updated: **2026-09-16**, at app version **1.1.33**, tag **v1.1.33**.
+Last updated: **2026-09-16**, at app version **1.1.33**, tag **v1.1.33**,
+HEAD `63eda74`.
 
 ## Where you are in one paragraph
 
-The desktop app shipped 1.1.33. Since then, three bodies of work landed on an
-uncommitted tree. **One:** snippets are server-scoped and connect on demand.
-**Two:** a Rust workspace now exists — `ssh-thing-core` holds the shared model,
-storage, secrets, and SSH code, and `ssh-thing-cli` is a working
-capability-limited CLI for LLMs. **Three:** the desktop app grew an Automation
-panel that gates the CLI and installs it from GitHub Releases. The desktop
+The desktop app shipped 1.1.33. Since then, three bodies of work landed, and a
+fourth pass reviewed and hardened them. **One:** snippets are server-scoped and
+connect on demand. **Two:** a Rust workspace now exists — `ssh-thing-core` holds
+the shared model, storage, secrets, and SSH code, and `ssh-thing-cli` is a
+working capability-limited CLI for LLMs. **Three:** the desktop app grew an
+Automation panel that gates the CLI and installs it from GitHub Releases.
+**Four:** the CLI was reviewed against its own spec and six defects were fixed — one timeout
+clamp instead of two, a corrupt gate file that now refuses instead of reporting
+a failed run, `update_available` that no longer lies about a machine with no
+CLI installed, a checksum parser that accepts BSD format, a single read of
+`servers.json` in `doctor`, and a new `doctor.runnable` field. The desktop
 binary, the CLI binary, all tests, clippy, and formatting are green. What has
 **not** happened: nobody has clicked the Automation panel, and the installer has
 never downloaded a real release asset, because no published release carries CLI
@@ -32,12 +38,17 @@ binaries yet.
 
 ## Working tree state
 
-Branch `main`. Commit `d2379ad "Add shared core, LLM CLI, and automation panel"`
-sits directly on `06994fd "Filter stale release assets"`, which is on top of
-`4b60c9a "Release v1.1.33"`. Nothing is uncommitted except this document's own
-catch-up edits.
+Branch `main`, clean and level with `origin/main`. The work is three commits on
+top of `4b60c9a "Release v1.1.33"`:
 
-Everything below landed in `d2379ad`:
+```text
+63eda74  Harden the CLI: one timeout clamp, honest gate and install status
+afc8324  Add integration coverage for the CLI refusal paths
+d138fe6  Record the committed state in STATE-OF-WORK
+d2379ad  Add shared core, LLM CLI, and automation panel
+```
+
+`d2379ad` is the feature commit. It contains:
 
 ```text
  .github/workflows/release.yml         build-cli job + .sha256 assets
@@ -65,22 +76,30 @@ Run and passing on the current tree:
 node --check frontend/main.js
 node --check frontend/components/automation-manager.js
 cargo fmt --all --check
-cargo test --workspace                                # 85 passed, 0 failed
+cargo test --workspace                                # 89 passed, 0 failed
 cargo clippy --workspace --all-targets -- -D warnings  # clean
 cargo build -p tauri-app                              # links
 cargo build --release -p ssh-thing-cli                # 3.99 MB binary
 ```
 
 `crates/ssh-thing-cli/tests/cli.rs` runs the real binary against a fixture data
-directory for 12 cases, with no network access: the automation gate refuses,
-unscoped snippets refuse, cross-server requests refuse, a snippet whose server
-vanished refuses, ambiguous and unknown selectors exit 1, `--dry-run` resolves
-without connecting, the timeout clamp is reported, `servers` output carries no
+directory for 15 cases, with no network access: the automation gate refuses,
+an unreadable `settings.json` refuses as `settings_unreadable`, unscoped
+snippets refuse, cross-server requests refuse, a snippet whose server vanished
+refuses, ambiguous and unknown selectors exit 1, `--dry-run` resolves without
+connecting, both the timeout floor and ceiling are clamped and reported,
+`doctor` never claims `runnable` with the gate off, `servers` output carries no
 secret material, and history records the run.
 
 Manually verified on top of that: a refused TCP connect is reported with the
 full report attached, and an **unknown host key is refused while
 `known_hosts.json` stays byte-identical** (checked against `github.com:22`).
+
+Also checked by hand against the release binary with a fixture data directory:
+`--timeout 1` reports `timeout_seconds: 5` with `timeout_clamped: true`;
+`settings.json` containing `null` exits 3 with `settings_unreadable`; and
+`doctor --human` prints `Runnable now: no` with the gate off while every other
+check passes.
 
 **Not verified — the honest gaps:**
 
@@ -103,6 +122,7 @@ full report attached, and an **unknown host key is refused while
 | **D4** | `run` flag shape | **Decided:** `--snippet` is required and carries the capability; `--server` is optional but must match the snippet's own scope, otherwise the run is refused. |
 | **D5** | Destructive-snippet approval | **Decided for v1:** no per-snippet approval. The single `allow_external_automation` toggle is the gate. Revisit if it is ever turned on in practice. |
 | **D6** | R2 vs GitHub Releases | **Decided:** GitHub Releases, with published `.sha256` files. |
+| **D7** | Keep the Homebrew cask gated on the CLI build? | **Decided:** yes. `update-homebrew` still needs `[build, build-cli]`. A CLI build failure delays the cask but can never publish a partial release; the DMGs and the GitHub Release are unaffected. |
 
 ## Action items (not decisions)
 
@@ -135,8 +155,9 @@ full report attached, and an **unknown host key is refused while
 
 ## Things a fresh agent must not assume
 
-- No published release contains a CLI binary. `cli_status` reports
-  "Update available" and `install_cli` will fail with a 404 until a release is
+- No published release contains a CLI binary. `cli_status` reports the CLI as
+  **not installed** (it no longer reports "Update available" for a machine with
+  nothing installed), and `install_cli` will fail with a 404 until a release is
   cut with the new workflow.
 - Snippets are not server-scoped *in the released 1.1.33 build*; all 14 snippets
   in the live data directory are still unscoped, so **nothing is CLI-runnable
