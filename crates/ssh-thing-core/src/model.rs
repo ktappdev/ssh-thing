@@ -22,6 +22,19 @@ pub const MAX_CLI_HISTORY_ENTRIES: usize = 500;
 pub const MAX_OUTPUT_BYTES: usize = 64 * 1024;
 pub const TRUNCATION_MARKER: &str = "\n[output truncated]";
 
+/// Ceiling for a single uploaded file. Guards against a stray multi-gigabyte
+/// pick filling a remote disk before the user notices.
+pub const MAX_UPLOAD_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+/// Progress events are throttled to roughly this many bytes, so a large
+/// transfer does not flood the event bus with per-chunk messages.
+pub const UPLOAD_PROGRESS_STEP_BYTES: u64 = 256 * 1024;
+/// How long to wait for the server to accept the `sftp` subsystem request.
+/// Bounded because `russh`'s `request_subsystem` only sends the request and
+/// never observes the reply — without this, a server with no SFTP hangs.
+pub const SFTP_SUBSYSTEM_ACK_TIMEOUT_SECONDS: u64 = 10;
+/// Per-request SFTP timeout applied to a single transfer.
+pub const SFTP_IO_TIMEOUT_SECONDS: u64 = 60;
+
 pub const DEFAULT_CONNECT_TIMEOUT_SECONDS: u64 = 30;
 pub const DEFAULT_COMMAND_TIMEOUT_SECONDS: u64 = 60;
 pub const MIN_COMMAND_TIMEOUT_SECONDS: u64 = 5;
@@ -228,4 +241,114 @@ pub struct ImportResult {
     pub snippets_skipped: usize,
     pub actions_imported: usize,
     pub actions_skipped: usize,
+}
+
+// ------------------------------------------------------------- file upload
+//
+// Nothing below is persisted. Uploads are transient: the result is returned
+// from the command that ran the transfer, so these shapes never touch a store
+// and `DATA_SCHEMA_VERSION` does not move.
+
+/// One local file chosen for upload, as the picker reported it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UploadCandidate {
+    /// Absolute local path. Never shown to the remote server.
+    pub path: String,
+    /// File name only; this is what lands in the destination directory.
+    pub name: String,
+    pub size: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UploadStatus {
+    Uploaded,
+    /// The remote file already existed and overwrite was off.
+    SkippedExists,
+    Failed,
+}
+
+/// Outcome for one file. A failed file never aborts the rest of the batch.
+///
+/// Serialized camelCase: these go straight to JavaScript and are never stored,
+/// so the wire shape can match the frontend without a translation layer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UploadResult {
+    pub name: String,
+    pub remote_path: String,
+    pub bytes_sent: u64,
+    pub status: UploadStatus,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+/// Emitted as `transfer-progress` while a batch runs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransferProgressEvent {
+    pub connection_id: String,
+    pub index: usize,
+    pub total_files: usize,
+    pub name: String,
+    pub bytes_sent: u64,
+    pub total_bytes: u64,
+    /// True for the final event of a file, so the UI can settle the bar.
+    pub done: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // These two shapes cross the Tauri boundary straight into JavaScript, so
+    // their key names are a contract the frontend depends on. Renaming a Rust
+    // field without keeping the camelCase rename breaks the upload UI silently.
+    #[test]
+    fn upload_result_serializes_camel_case_for_the_frontend() {
+        let result = UploadResult {
+            name: "notes.txt".to_string(),
+            remote_path: "/home/ken/notes.txt".to_string(),
+            bytes_sent: 42,
+            status: UploadStatus::Uploaded,
+            error: None,
+        };
+
+        let json = serde_json::to_value(&result).expect("serialize");
+
+        assert_eq!(json["remotePath"], "/home/ken/notes.txt");
+        assert_eq!(json["bytesSent"], 42);
+        assert_eq!(json["status"], "uploaded");
+        assert!(json.get("remote_path").is_none());
+        assert!(json.get("bytes_sent").is_none());
+    }
+
+    #[test]
+    fn transfer_progress_serializes_camel_case_for_the_frontend() {
+        let event = TransferProgressEvent {
+            connection_id: "conn-1".to_string(),
+            index: 1,
+            total_files: 3,
+            name: "video.mp4".to_string(),
+            bytes_sent: 2048,
+            total_bytes: 4096,
+            done: false,
+        };
+
+        let json = serde_json::to_value(&event).expect("serialize");
+
+        assert_eq!(json["connectionId"], "conn-1");
+        assert_eq!(json["totalFiles"], 3);
+        assert_eq!(json["bytesSent"], 2048);
+        assert_eq!(json["totalBytes"], 4096);
+        assert!(json.get("connection_id").is_none());
+    }
+
+    #[test]
+    fn upload_status_covers_the_three_frontend_branches() {
+        let json = |status| serde_json::to_value(status).expect("serialize");
+        assert_eq!(json(UploadStatus::Uploaded), "uploaded");
+        assert_eq!(json(UploadStatus::SkippedExists), "skippedExists");
+        assert_eq!(json(UploadStatus::Failed), "failed");
+    }
 }

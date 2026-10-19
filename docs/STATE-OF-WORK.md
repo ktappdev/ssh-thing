@@ -213,6 +213,61 @@ Two surprises worth keeping:
   real asset: no release carries CLI binaries yet. Until a release does, the 404
   now explains itself and suggests building from source.
 
+## File upload (desktop only)
+
+File upload landed as a desktop feature. It reuses the connection that is
+already open: a second SSH channel is opened and switched to the `sftp`
+subsystem, so nothing re-authenticates and the PTY channel keeps running.
+
+| Piece | Where |
+|---|---|
+| SFTP engine (subsystem handshake, streaming write, path rules) | `crates/ssh-thing-core/src/sftp.rs` |
+| `pick_upload_files` + `upload_files` commands | `src-tauri/src/transfer.rs` |
+| Upload modal, progress bar, drag-and-drop | `frontend/components/transfer-manager.js` |
+| Header button visibility | `updateHeaderButtons` in `frontend/components/session-manager.js` |
+
+Design notes worth keeping:
+
+- **`russh-sftp` adds no packages.** Version 2.1.1 was already in `Cargo.lock`
+  as a transitive dependency of `russh` 0.46; it is now a direct dependency of
+  `ssh-thing-core` only, and the lockfile gained exactly one edge.
+- **The subsystem ack is awaited.** `russh`'s `request_subsystem` only sends the
+  request and never looks at the reply, so a server without SFTP would hang
+  forever. `open_sftp` waits for `Success`/`Failure` under a 10-second bound and
+  returns a specific message on timeout.
+- **The session lock covers the handshake only.** `state.sessions` is held for
+  channel-open plus ack, then released before any bytes move, so typing in the
+  terminal stays responsive during a large transfer. `send_input` and `resize`
+  use `state.shells` and never contend with it.
+- **Per-file failures are not batch failures.** A missing local file, a dropped
+  directory, an oversize file, or a write error becomes one `failed` entry; the
+  rest of the batch continues. Only session-level problems fail the whole call.
+- **Overwrite is opt-in and race-safe.** With overwrite off the remote file is
+  opened with `EXCLUDE`, so a file that appears between the existence check and
+  the open is still never silently replaced.
+- **The CLI was deliberately left alone.** There is no `ssh-thing upload`; the
+  no-write capability boundary in `docs/CLI-FOR-LLMS.md` still holds, and the
+  19-case CLI integration suite is unchanged.
+
+**Verified:** `cargo fmt --all --check`, `cargo test --workspace` (116 passing,
+including 14 new `sftp` unit tests and 3 wire-contract tests that pin the
+camelCase JSON keys the frontend reads), `cargo clippy --workspace --all-targets
+-- -D warnings`, `cargo build -p tauri-app`, and
+`cargo build --release -p ssh-thing-cli` with `ssh-thing version` still
+reporting `data_schema_version: 1` and no new subcommand.
+
+**Not verified — needs a real SSH host:** no transfer has been run against a
+live server. Specifically unseen: a byte-identical binary upload, overwrite
+on/off behaviour, a destination directory that does not exist, a
+**server with no SFTP subsystem** (the highest-value case), progress on a
+~100 MB file, drag-and-drop from Finder, and terminal responsiveness during a
+large upload.
+
+**Known limitations, accepted for v1:** no download, no folder/recursive
+upload, no mid-transfer cancel, and no permission/mtime preservation — the
+server applies its own defaults, and a transfer cut mid-file leaves a partial
+file behind with no cleanup pass.
+
 ## Open decisions
 
 | # | Decision | Status |

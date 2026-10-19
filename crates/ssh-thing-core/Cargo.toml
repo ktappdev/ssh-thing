@@ -10,6 +10,10 @@ async-trait = "0.1"
 dirs = "6"
 keyring = "2"
 russh = "0.46"
+# SFTP client for file upload. Transport-agnostic: it runs over the stream
+# produced by `russh`'s `Channel::into_stream()`, so it adds no new packages
+# to the tree (already a transitive dependency of russh).
+russh-sftp = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }

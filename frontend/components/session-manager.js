@@ -168,16 +168,22 @@ export function createSessionManager(options) {
     const session = getActiveSession();
     const disconnectBtn = document.getElementById("disconnect-btn");
     const reconnectBtn = document.getElementById("reconnect-btn");
+    const uploadBtn = document.getElementById("upload-btn");
     if (!disconnectBtn || !reconnectBtn) return;
 
     if (!session?.server) {
       disconnectBtn.classList.add("hidden");
       reconnectBtn.classList.add("hidden");
+      uploadBtn?.classList.add("hidden");
       return;
     }
 
     disconnectBtn.classList.remove("hidden");
-    reconnectBtn.classList.toggle("hidden", !["Disconnected", "Error"].includes(session.connectionState.type));
+    const state = session.connectionState.type;
+    reconnectBtn.classList.toggle("hidden", !["Disconnected", "Error"].includes(state));
+
+    // Upload needs a live shell, so it only appears for a connected session.
+    uploadBtn?.classList.toggle("hidden", state !== "Connected" || !session.shellId);
   }
 
   function renderActiveSessionChrome({ resetTerminal = false } = {}) {

@@ -1,6 +1,7 @@
 mod actions;
 mod cli_manager;
 mod osc52;
+mod transfer;
 
 use async_trait::async_trait;
 use osc52::{Osc52Processor, SystemClipboard};
@@ -35,6 +36,7 @@ pub use ssh_thing_core::model::{
 use ssh_thing_core::{store as core_store, AutomationSettings};
 
 use cli_manager::{cli_status, install_cli, uninstall_cli};
+use transfer::{pick_upload_files, upload_files};
 
 #[tauri::command]
 async fn get_servers(app: AppHandle) -> Result<Vec<ServerConnection>, String> {
@@ -1459,7 +1461,9 @@ pub fn run() {
             connect,
             disconnect,
             send_input,
-            resize
+            resize,
+            pick_upload_files,
+            upload_files
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -3,6 +3,7 @@ import { initActionManager } from "./components/actions-manager.js";
 import { initAutomationManager } from "./components/automation-manager.js";
 import { initHeaderMenu } from "./components/header-menu.js";
 import { createSessionManager } from "./components/session-manager.js";
+import { createTransferManager } from "./components/transfer-manager.js";
 import { renderServerList as renderServerCards } from "./components/server-list.js";
 
 const { invoke } = window.__TAURI__.core;
@@ -31,6 +32,7 @@ let terminalSettings = loadTerminalSettings();
 let closeRequestInProgress = false;
 let actionManager = null;
 let sessionManager = null;
+let transferManager = null;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -95,6 +97,41 @@ function showToast(message, type = "info") {
   setTimeout(() => {
     toast.remove();
   }, 3200);
+}
+
+// Drag-and-drop upload. Tauri reports real filesystem paths on desktop; the
+// webview handles the event because a browser-level `drop` listener never sees
+// paths from the OS.
+async function initFileDropTarget() {
+  const webview = window.__TAURI__?.webview;
+  const container = document.getElementById("terminal-container");
+  if (!webview || typeof webview.getCurrentWebview !== "function" || !container) {
+    return;
+  }
+
+  const setActive = (active) => container.classList.toggle("drop-target-active", active);
+
+  try {
+    await webview.getCurrentWebview().onDragDropEvent((event) => {
+      const payload = event.payload;
+      if (payload.type === "enter" || payload.type === "over") {
+        setActive(true);
+        return;
+      }
+      if (payload.type === "leave") {
+        setActive(false);
+        return;
+      }
+      if (payload.type === "drop") {
+        setActive(false);
+        if (Array.isArray(payload.paths) && payload.paths.length > 0) {
+          transferManager?.uploadPaths(payload.paths);
+        }
+      }
+    });
+  } catch (error) {
+    console.error("Drag-and-drop upload unavailable:", error);
+  }
 }
 
 function showAlert(title, message, type = "error") {
@@ -1223,6 +1260,13 @@ window.addEventListener("DOMContentLoaded", () => {
     });
     initAboutModal().catch((error) => console.error("About modal init failed:", error));
     initAutomationManager({ invoke, showToast, showAlert });
+    transferManager = createTransferManager({
+      invoke,
+      showToast,
+      showAlert,
+      getActiveSession: () => sessionManager?.getActiveSession() || null,
+    });
+    transferManager.init();
     disableInputCorrections();
     setupWindowCloseGuard();
     initWindowState();
@@ -1467,6 +1511,12 @@ window.addEventListener("DOMContentLoaded", () => {
     listen("terminal-output", (event) => {
       sessionManager?.handleTerminalOutput(event.payload);
     });
+
+    listen("transfer-progress", (event) => {
+      transferManager?.handleProgress(event.payload);
+    });
+
+    initFileDropTarget();
 
     listen("toggle-focus-mode", () => {
       toggleFocusMode();

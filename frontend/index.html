@@ -454,6 +454,30 @@
         flex-direction: column;
         flex: 1 1 auto;
         min-height: 0;
+        position: relative;
+      }
+
+      /* Drag-and-drop feedback while files hover the terminal. */
+      #terminal-container.drop-target-active {
+        outline: 2px dashed rgba(96, 165, 250, 0.9);
+        outline-offset: -6px;
+      }
+
+      #terminal-container.drop-target-active::after {
+        content: "Drop files to upload";
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: "Space Grotesk", system-ui, sans-serif;
+        font-size: 0.95rem;
+        letter-spacing: 0.02em;
+        color: rgba(96, 165, 250, 0.95);
+        background: rgba(15, 23, 42, 0.35);
+        border-radius: 12px;
+        pointer-events: none;
+        z-index: 5;
       }
 
       .terminal-pane {
@@ -1731,6 +1755,10 @@
           </div>
           
           <div class="header-actions">
+            <button id="upload-btn" class="hidden header-action-btn flex items-center gap-1.5 bg-gray-600 hover:bg-gray-700 text-white rounded text-sm transition-colors shadow-sm" title="Upload files to this server">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 16V4m0 0L8 8m4-4l4 4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+                <span>Upload</span>
+            </button>
             <button id="disconnect-btn" class="hidden header-action-btn flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white rounded text-sm transition-colors shadow-sm">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                 <span>Disconnect</span>
@@ -2167,6 +2195,46 @@
         <div id="action-history-list" class="modal-section space-y-3 max-h-[28rem] overflow-y-auto" role="log" aria-live="polite">
           <!-- Action history entries will be injected here -->
         </div>
+      </div>
+    </div>
+
+    <div id="upload-modal" class="hidden fixed inset-0 modal-backdrop z-50" role="dialog" aria-modal="true" aria-labelledby="upload-title" aria-describedby="upload-description">
+      <div class="modal-content modal-panel w-[30rem] max-w-full mx-4 overflow-hidden">
+        <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 id="upload-title" class="text-lg font-semibold text-gray-800 dark:text-gray-100">Upload Files</h3>
+          <p id="upload-description" class="text-sm text-gray-600 dark:text-gray-400 mt-1">Files are sent over SFTP to the server in this tab.</p>
+        </div>
+        <form id="upload-form">
+          <div class="modal-section space-y-3">
+            <div>
+              <label class="form-label" for="upload-file-list">Files</label>
+              <ul id="upload-file-list" class="max-h-40 overflow-y-auto text-sm font-mono text-gray-700 dark:text-gray-300 space-y-1 border border-gray-200 dark:border-gray-700 rounded-md p-2 bg-gray-50 dark:bg-gray-900/40"></ul>
+              <p id="upload-file-summary" class="text-xs text-gray-500 dark:text-gray-400 mt-1.5"></p>
+            </div>
+            <div>
+              <label class="form-label" for="upload-destination">Destination directory</label>
+              <input type="text" id="upload-destination" autocorrect="off" autocapitalize="off" spellcheck="false" class="form-input font-mono" value="~" placeholder="~" />
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1.5">~ is the server's home directory. A relative path resolves against it.</p>
+            </div>
+            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+              <input type="checkbox" id="upload-overwrite" class="rounded border-gray-300 dark:border-gray-600" />
+              <span>Overwrite files that already exist</span>
+            </label>
+            <div id="upload-progress-wrap" class="hidden">
+              <div class="flex justify-between text-xs text-gray-600 dark:text-gray-400 mb-1">
+                <span id="upload-progress-label">Uploading...</span>
+                <span id="upload-progress-count"></span>
+              </div>
+              <div class="w-full h-2 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="upload-progress-bar-track">
+                <div id="upload-progress-bar" class="h-full bg-blue-500 transition-all duration-150" style="width:0%"></div>
+              </div>
+            </div>
+          </div>
+          <div class="px-5 py-4 flex justify-end gap-2 border-t border-gray-200/70 dark:border-gray-700/70">
+            <button type="button" id="upload-cancel" class="ghost-btn">Cancel</button>
+            <button type="submit" id="upload-confirm" class="ghost-btn ghost-btn-primary" style="background: rgba(114, 135, 253, 0.1);">Upload</button>
+          </div>
+        </form>
       </div>
     </div>
 

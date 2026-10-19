@@ -256,6 +256,7 @@ struct AppState {
 - `src-tauri/src/actions.rs` - Actions CRUD + execution (delegates to core)
 - `src-tauri/src/cli_manager.rs` - CLI status, download/verify/install/uninstall
 - `src-tauri/src/osc52.rs` - OSC52 escape sequence parser + clipboard (309 lines)
+- `src-tauri/src/transfer.rs` - File upload commands: native picker + SFTP transfer driver
 - `src-tauri/capabilities/default.json` - Tauri 2.x permissions
 - `src-tauri/tauri.conf.json` - Tauri configuration
 
@@ -266,6 +267,7 @@ struct AppState {
 - `src/secrets.rs` - keyring + `SSH_THING_SECRET_*` override + `probe()` health check
 - `src/settings.rs` - `AutomationSettings` (`allow_external_automation`)
 - `src/ssh.rs` - connect, authenticate, `StrictHostKeyHandler`, `exec_command`
+- `src/sftp.rs` - SFTP upload engine: subsystem handshake, streaming write, remote path rules
 
 ### CLI (`crates/ssh-thing-cli`)
 - `src/main.rs` - clap surface, dispatch, exit codes
@@ -278,6 +280,7 @@ struct AppState {
 - `frontend/components/session-manager.js` - Terminal sessions, xterm.js, tabs (830 lines)
 - `frontend/components/actions-manager.js` - Actions UI CRUD + execution (493 lines)
 - `frontend/components/automation-manager.js` - Automation toggle + CLI install panel
+- `frontend/components/transfer-manager.js` - Upload confirm modal, progress bar, drag-and-drop
 - `frontend/components/server-list.js` - Server card rendering (196 lines)
 - `frontend/components/about-modal.js` - About modal component (62 lines)
 - `frontend/components/header-menu.js` - Header dropdown menu (40 lines)

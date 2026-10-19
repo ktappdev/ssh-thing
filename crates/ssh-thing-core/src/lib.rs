@@ -8,6 +8,7 @@ pub mod model;
 pub mod paths;
 pub mod secrets;
 pub mod settings;
+pub mod sftp;
 pub mod ssh;
 pub mod store;
 
@@ -15,6 +16,10 @@ pub use model::*;
 pub use paths::{app_data_dir, app_data_dir_for, override_data_dir, APP_IDENTIFIER, ENV_DATA_DIR};
 pub use secrets::{delete_secret, get_secret, put_secret};
 pub use settings::AutomationSettings;
+pub use sftp::{
+    check_upload_size, describe_sftp_error, format_bytes, join_remote, normalize_remote_dir,
+    open_sftp, upload_file, UploadOutcome,
+};
 pub use ssh::{
     append_capped, clamp_timeout, classify_run_failure, client_config, connect,
     connect_saved_server, describe_connect_failure, disconnect_quiet, exec_command,

@@ -5378,6 +5378,7 @@ dependencies = [
  "dirs",
  "keyring",
  "russh",
+ "russh-sftp",
  "serde",
  "serde_json",
  "tokio",
