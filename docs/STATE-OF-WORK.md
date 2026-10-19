@@ -263,6 +263,11 @@ on/off behaviour, a destination directory that does not exist, a
 ~100 MB file, drag-and-drop from Finder, and terminal responsiveness during a
 large upload.
 
+**This shipped untested.** `v1.1.35` (commit `10b9449`) is the first release
+that carries upload, cut deliberately without a live-host run. Treat the first
+real-world upload as the actual acceptance test: if the SFTP path is broken,
+the symptom will be visible to users before it is visible here.
+
 **Known limitations, accepted for v1:** no download, no folder/recursive
 upload, no mid-transfer cancel, and no permission/mtime preservation — the
 server applies its own defaults, and a transfer cut mid-file leaves a partial
