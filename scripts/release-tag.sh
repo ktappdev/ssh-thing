@@ -118,12 +118,31 @@ if (nextCargoToml === cargoToml) {
 }
 fs.writeFileSync(files.cargoToml, nextCargoToml);
 
+// Cargo.lock pins the resolved version of every package, including the
+// workspace members that inherit [workspace.package].version. Bump those
+// entries here so the lockfile lands in the same release commit; otherwise
+// the first build after the release rewrites it and leaves a dirty tree.
+const cargoLock = fs.readFileSync("Cargo.lock", "utf8");
+const lockMembers = ["ssh-thing-core", "ssh-thing-cli"];
+let nextCargoLock = cargoLock;
+for (const member of lockMembers) {
+  const block = new RegExp(
+    `(\\[\\[package\\]\\]\\nname = "${member}"\\nversion = ")[^"]+(")`,
+  );
+  if (!block.test(nextCargoLock)) {
+    console.error(`Failed to find ${member} in Cargo.lock`);
+    process.exit(1);
+  }
+  nextCargoLock = nextCargoLock.replace(block, `$1${version}$2`);
+}
+fs.writeFileSync("Cargo.lock", nextCargoLock);
+
 const tauriConf = JSON.parse(fs.readFileSync(files.tauriConf, "utf8"));
 tauriConf.version = version;
 fs.writeFileSync(files.tauriConf, `${JSON.stringify(tauriConf, null, 2)}\n`);
 EOF
 
-git add package.json package-lock.json Cargo.toml src-tauri/tauri.conf.json
+git add package.json package-lock.json Cargo.toml Cargo.lock src-tauri/tauri.conf.json
 git commit -m "Release $TAG"
 git tag "$TAG"
 
