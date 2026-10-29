@@ -19,6 +19,9 @@ Cargo.lock
 # Local release artifacts
 release-builds/
 
+# Local media scratch space
+videos/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
