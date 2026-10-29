@@ -28,6 +28,7 @@ let pendingDisconnectResolve = null;
 let pendingCloseAppResolve = null;
 let terminalTransparent = true;
 let serverFilterTerm = "";
+let snippetFilterTerm = "";
 let terminalSettings = loadTerminalSettings();
 let closeRequestInProgress = false;
 let actionManager = null;
@@ -584,14 +585,31 @@ async function loadSnippets() {
 
 function renderSnippetList() {
   const listEl = document.getElementById("snippet-list");
+  const filterWrap = document.getElementById("snippet-filter-wrap");
   listEl.innerHTML = "";
-  
+
+  if (filterWrap) {
+    filterWrap.classList.toggle("hidden", snippets.length < 6);
+  }
+
   if (snippets.length === 0) {
     listEl.innerHTML = `<div class="text-center text-gray-500 dark:text-gray-400 mt-10 text-sm">No snippets added yet.</div>`;
     return;
   }
 
-  snippets.forEach((snippet) => {
+  const normalizedTerm = snippetFilterTerm.trim().toLowerCase();
+  const filteredSnippets = snippets.filter((snippet) => {
+    if (!normalizedTerm) return true;
+    const haystack = `${snippet.name} ${snippet.command} ${snippet.description || ""} ${getSnippetServerLabel(snippet.server_id)}`.toLowerCase();
+    return haystack.includes(normalizedTerm);
+  });
+
+  if (filteredSnippets.length === 0) {
+    listEl.innerHTML = `<div class="text-center text-gray-500 dark:text-gray-400 mt-10 text-sm">No matches for "${escapeHtml(snippetFilterTerm)}".</div>`;
+    return;
+  }
+
+  filteredSnippets.forEach((snippet) => {
     const div = document.createElement("div");
     div.className = "snippet-item workspace-card bg-white dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700/80 rounded-lg px-3 py-2.5 shadow-sm group relative";
     div.dataset.id = snippet.id;
@@ -1332,6 +1350,14 @@ window.addEventListener("DOMContentLoaded", () => {
       serverFilterInput.addEventListener("input", (event) => {
         serverFilterTerm = event.target.value || "";
         renderServerList();
+      });
+    }
+
+    const snippetFilterInput = document.getElementById("snippet-filter");
+    if (snippetFilterInput) {
+      snippetFilterInput.addEventListener("input", (event) => {
+        snippetFilterTerm = event.target.value || "";
+        renderSnippetList();
       });
     }
 
