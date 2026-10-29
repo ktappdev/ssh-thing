@@ -4,7 +4,7 @@
 repository. If you are picking the project up cold, this file tells you where
 things stand.
 
-Last updated: **2026-09-16**, at app version **1.1.33**, tag **v1.1.33**. The tip
+Last updated: **2026-10-29**, at app version **1.1.36**, tag **v1.1.36**. The tip
 of `main` is the state of work; take its hash from `git log -1` instead of
 trusting a hash written here.
 
@@ -273,6 +273,33 @@ upload, no mid-transfer cancel, and no permission/mtime preservation — the
 server applies its own defaults, and a transfer cut mid-file leaves a partial
 file behind with no cleanup pass.
 
+## Snippets sidebar filter (1.1.36)
+
+The snippets sidebar gained a text filter, mirroring the hosts filter exactly:
+the input auto-appears at six or more snippets, matching is a lowercase
+substring over name, command, description, and the server label (so typing a
+server nickname filters to that server's snippets), and an empty result shows a
+"No matches" state. Frontend-only: the input row above `#snippet-list` in
+`frontend/index.html`, plus `snippetFilterTerm` state, the filtering step in
+`renderSnippetList()`, and the input listener in `frontend/main.js`. No Rust,
+CLI, or storage changes.
+
+- The slide-over panel picks the filter up for free: it clones `#snippet-list`'s
+  innerHTML on open, so it shows the filtered list. The input itself lives
+  outside the cloned container and stays sidebar-only, like the hosts filter.
+- Gates were green before release (`node --check` ×2, `cargo fmt --all --check`,
+  `cargo test --workspace`, `cargo clippy -D warnings`), and both local DMGs
+  built and landed in `release-builds/`.
+- **Not verified in a live app run** — the filter has not been exercised by hand
+  in `npm run tauri dev`. First real use is the acceptance test.
+- Process note: every subagent dispatch this session (designer ×2, reviewer ×1)
+  failed with a provider auth error before starting, so the change was
+  implemented and reviewed inline against the hosts-filter pattern.
+- Release hygiene: `videos/` (an unrelated local promo-video scratch directory)
+  was gitignored because it tripped `release-tag.sh`'s clean-tree check. The
+  local `update-homebrew.sh` 404 during the release was the documented transient;
+  the workflow's `update-homebrew` job updated the cask to 1.1.36.
+
 ## Open decisions
 
 | # | Decision | Status |
@@ -292,8 +319,10 @@ file behind with no cleanup pass.
    into a session transcript. The value is deliberately not recorded in these
    docs. Rotate it.
 2. **Traps in this environment:**
-   - `release-builds/` contains **1.1.32** DMGs while `package.json` is
-     **1.1.33**. Stale; not the current artifacts.
+   - `release-builds/` contains **1.1.32 and 1.1.35** DMGs while `package.json`
+     is **1.1.36**. The 1.1.35 pair is the pre-release verification build for
+     v1.1.36 (built before the version bump, per the documented flow); both are
+     stale relative to the released artifacts.
    - `docs/PRD-Automatic-Updates.md` and `docs/feature-research-roadmap-2026-03-06.md`
      predate this work and were not reviewed here.
 3. `src-tauri` has no `version` key, so `env!("CARGO_PKG_VERSION")` there is
