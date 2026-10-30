@@ -4,7 +4,7 @@
 repository. If you are picking the project up cold, this file tells you where
 things stand.
 
-Last updated: **2026-10-30**, at app version **1.1.36**, tag **v1.1.36**. The tip
+Last updated: **2026-10-30**, at app version **1.1.37**, tag **v1.1.37**. The tip
 of `main` is the state of work; take its hash from `git log -1` instead of
 trusting a hash written here.
 
@@ -45,21 +45,25 @@ binaries yet.
 
 ## Working tree state
 
-Branch `main`, clean and level with `origin/main`. Seven commits sit on top of
-`4b60c9a "Release v1.1.33"`; the list grows as work lands, so treat `git log` as
-the source of truth:
+Branch `main`, clean and level with `origin/main`. `HEAD` is the `Release v1.1.37`
+commit and carries the exact `v1.1.37` tag; the list grows as work lands, so
+treat `git log` as the source of truth:
 
 ```text
-1eb5b00  Make argument errors obey the documented usage contract
-c2ff05c  Remove the beads issue tracker from the project
-3dca514  Record the hardening pass in the handoff docs
-63eda74  Harden the CLI: one timeout clamp, honest gate and install status
-afc8324  Add integration coverage for the CLI refusal paths
-d138fe6  Record the committed state in STATE-OF-WORK
-d2379ad  Add shared core, LLM CLI, and automation panel
+9b958bd  Release v1.1.37
+31092ea  Fix unreadable terminal in light mode
+e0f9f25  Record the snippets filter release in STATE-OF-WORK
+0e64c1d  Release v1.1.36
+deeb597  Ignore the local videos scratch directory
+e0b0092  Add a text filter to the snippets sidebar
+faaa14a  Record that v1.1.35 shipped upload without a live-host run
+2f33217  Keep Cargo.lock in the release commit
+10b9449  Release v1.1.35
+4e7f815  Upload files over SFTP on the connection that is already open
 ```
 
-`d2379ad` is the feature commit. It contains:
+`d2379ad` is the feature commit that introduced the shared core, the CLI, and
+the Automation panel. It contains:
 
 ```text
  .github/workflows/release.yml         build-cli job + .sha256 assets
@@ -343,6 +347,43 @@ readable light text while the chrome turns light; light → dark → glass comes
 back; fresh load in light mode → solid dark terminal. Gates: `node --check` on
 both changed files. No Rust, CLI, or storage changes.
 
+## Release v1.1.37 (2026-10-30)
+
+Shipped the light-mode terminal fix. The release ran end to end and was
+verified from the **published** artifacts, not from the local build:
+
+| Step | Result |
+|---|---|
+| Version bump | `1.1.36` → `1.1.37` via `scripts/release-tag.sh` — `package.json`, `package-lock.json`, `Cargo.toml`, `Cargo.lock`, `src-tauri/tauri.conf.json` |
+| Local build gate | `npm run build:release` — both DMGs built **before** the tag was pushed: `release-builds/SSH.THING_1.1.37_{x64,aarch64}.dmg` |
+| Push | commit `9b958bd` + tag `v1.1.37` → `origin/main` and the remote tag |
+| Workflow | Release run `41013197426` — all 9 jobs green: validate-tag, 4 desktop builds, 3 CLI builds, Homebrew cask |
+| Assets | 12 published, none stale — 2 macOS DMGs, AppImage, deb, msi, exe, and 3 CLI binaries each with a `.sha256` |
+| Homebrew | cask at `1.1.37`; both cask SHA256s match the published asset digests exactly |
+| Local install | `/Applications/SSH THING.app` replaced 1.1.35 → 1.1.37 from the published DMG, quarantine stripped, app launched and running |
+
+The CLI asset was verified by checksum and then executed:
+`ssh-thing_1.1.37_macos-aarch64` → `shasum -a 256 -c` OK, and `version` reports
+`cli_version: 1.1.37` **and** `app_version: 1.1.37`. The app_version comes from
+the stamp the freshly installed app wrote into the data directory, so the new
+build is provably the one running.
+
+**Process notes worth keeping:**
+
+- The install used `ditto` into `/Applications` rather than
+  `scripts/install-latest-macos.sh`, because that script needs `sudo` for its
+  `rm` / `ditto` / `xattr` steps and this machine has no passwordless sudo. The
+  user is in the `admin` group and `/Applications` is group-writable, so the
+  replacement works without it. **The script still assumes sudo** — worth
+  revisiting if it is ever run unattended.
+- The previous app was moved to the trash, not deleted, so 1.1.35 is
+  recoverable.
+- `git fetch --tags origin` fails on this repository: a remote `0.1.1` tag
+  clashes with a different local `0.1.1`. Use `git ls-remote --tags origin` to
+  check remote tags instead.
+- `gh` is not installed on this machine; release and workflow state was read
+  from the public GitHub REST API with `curl`.
+
 ## Open decisions
 
 | # | Decision | Status |
@@ -362,10 +403,10 @@ both changed files. No Rust, CLI, or storage changes.
    into a session transcript. The value is deliberately not recorded in these
    docs. Rotate it.
 2. **Traps in this environment:**
-   - `release-builds/` contains **1.1.32 and 1.1.35** DMGs while `package.json`
-     is **1.1.36**. The 1.1.35 pair is the pre-release verification build for
-     v1.1.36 (built before the version bump, per the documented flow); both are
-     stale relative to the released artifacts.
+   - `release-builds/` still holds **1.1.32 and 1.1.35** DMGs alongside the
+     current **1.1.37** pair. The directory is gitignored, so the stale files
+     never reach a release, but they make "which build is current?" ambiguous —
+     read the version in the file name.
    - `docs/PRD-Automatic-Updates.md` and `docs/feature-research-roadmap-2026-03-06.md`
      predate this work and were not reviewed here.
 3. `src-tauri` has no `version` key, so `env!("CARGO_PKG_VERSION")` there is
@@ -379,30 +420,26 @@ both changed files. No Rust, CLI, or storage changes.
    see `host_key_mismatch`. Everything else on that path is verified.
 2. **Delete the duplicate `list` snippet** (or scope it). Two snippets differing
    only by case make `--snippet <name>` ambiguous, which is correct but annoying.
-3. **Cut the first release with CLI assets.** Bump the patch version so
-   `build-cli` runs, confirm the three `ssh-thing_<version>_<platform>` assets and
-   their `.sha256` files appear on the release, then use Install CLI for real.
-   This turns `install_cli` from untested into tested, and it is what puts the
-   Server dropdown and Automation panel in front of a normal user — the released
-   1.1.33 build has neither.
+3. **Releases now carry CLI assets.** v1.1.36 and v1.1.37 both published the
+   three `ssh-thing_<version>_<platform>` binaries with `.sha256` files, and
+   the cask is updated by CI after every release. What is still untested is
+   `install_cli` **on this machine** — the CLI is not installed here
+   (`~/.local/bin/ssh-thing` does not exist), so the in-app installer has never
+   been pressed end to end.
 4. **Then decide D1** and, if Actions goes, remove it in its own commit.
 
 ## Things a fresh agent must not assume
 
-- **The installed app is behind the working tree.** `/Applications/SSH THING.app`
-  is the released **1.1.33**, which predates this work: `git show
-  v1.1.33:frontend/index.html` contains no `snippet-server` element and no
-  Automation panel. Scoping a snippet, or enabling automation, requires
-  `npm run tauri dev` (which serves `frontend/` directly) or a new release. A
-  consequence worth knowing: the released frontend has no `server_id` field, so
-  **editing a snippet in the installed app saves it without a scope and silently
-  drops one set in a dev build.** Both apps share one data directory and one
-  keychain service.
-- No published release contains a CLI binary. `cli_status` reports the CLI as
-  **not installed** (it no longer reports "Update available" for a machine with
-  nothing installed), and `install_cli` will fail with a 404 until a release is
-  cut with the new workflow.
-- Snippets are not server-scoped *in the released 1.1.33 build*. In the live data
+- **The installed app is now current.** `/Applications/SSH THING.app` is the
+  released **1.1.37**, installed from the published DMG on 2026-10-30. It is
+  the same code as `main`, so `npm run tauri dev` is only needed for
+  unreleased work. Note that a dev build and the installed app **share one
+  data directory and one keychain service**, so a dev session can rewrite
+  snippets the installed app wrote.
+- The **CLI is not installed** on this machine even though every release ships
+  one: `cli_status` reports **not installed**, and `install_cli` will now
+  succeed instead of 404ing because the release assets exist.
+- Snippets are server-scoped in every release since 1.1.34. In the live data
   directory exactly one snippet is scoped (`List` → `server2`), so it is the only
   CLI-runnable snippet: `doctor` reports `1 runnable of 15 total`. The live data
   also holds a second, unscoped `list` snippet that looks like a duplicate.
