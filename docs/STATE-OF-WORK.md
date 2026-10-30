@@ -4,7 +4,7 @@
 repository. If you are picking the project up cold, this file tells you where
 things stand.
 
-Last updated: **2026-10-30**, at app version **1.1.37**, tag **v1.1.37**. The tip
+Last updated: **2026-10-30**, at app version **1.1.38**, tag **v1.1.38**. The tip
 of `main` is the state of work; take its hash from `git log -1` instead of
 trusting a hash written here.
 
@@ -45,21 +45,20 @@ binaries yet.
 
 ## Working tree state
 
-Branch `main`, clean and level with `origin/main`. `HEAD` is the `Release v1.1.37`
-commit and carries the exact `v1.1.37` tag; the list grows as work lands, so
+Branch `main`, clean and level with `origin/main`. `HEAD` is the `Release v1.1.38`
+commit and carries the exact `v1.1.38` tag; the list grows as work lands, so
 treat `git log` as the source of truth:
 
 ```text
+c5b2198  Release v1.1.38
+fe50e99  Give light mode a real light terminal
+f8833fe  Record the v1.1.37 release in STATE-OF-WORK
 9b958bd  Release v1.1.37
 31092ea  Fix unreadable terminal in light mode
 e0f9f25  Record the snippets filter release in STATE-OF-WORK
 0e64c1d  Release v1.1.36
 deeb597  Ignore the local videos scratch directory
 e0b0092  Add a text filter to the snippets sidebar
-faaa14a  Record that v1.1.35 shipped upload without a live-host run
-2f33217  Keep Cargo.lock in the release commit
-10b9449  Release v1.1.35
-4e7f815  Upload files over SFTP on the connection that is already open
 ```
 
 `d2379ad` is the feature commit that introduced the shared core, the CLI, and
@@ -403,6 +402,35 @@ build is provably the one running.
 - `gh` is not installed on this machine; release and workflow state was read
   from the public GitHub REST API with `curl`.
 
+## Release v1.1.38 (2026-10-30)
+
+Shipped the real light terminal: light mode now has a **white terminal surface
+with dark text**, instead of the dark terminal v1.1.37 shipped. Same release
+flow as v1.1.37, verified from the published artifacts:
+
+| Step | Result |
+|---|---|
+| Gates (before tagging) | `node --check` ×2, `cargo fmt --all --check`, `cargo test --workspace` (all suites green), `cargo clippy --workspace --all-targets -- -D warnings` |
+| Version bump | `1.1.37` → `1.1.38` via `scripts/release-tag.sh` |
+| Local build gate | `npm run build:release` — both DMGs built **before** the tag was pushed: `release-builds/SSH.THING_1.1.38_{x64,aarch64}.dmg` |
+| Push | commit `c5b2198` + tag `v1.1.38` → `origin/main` and the remote tag |
+| Workflow | Release run `41055054103` — all 9 jobs green, including the Homebrew cask |
+| Assets | 12 published, none missing, none stale — 2 macOS DMGs, AppImage, deb, msi, exe, and 3 CLI binaries each with a `.sha256` |
+| Homebrew | cask at `1.1.38`; both cask SHA256s match the published asset digests exactly |
+| Local install | `/Applications/SSH THING.app` replaced with 1.1.38 from the published DMG, quarantine stripped, app launched and running |
+
+The published CLI asset was checksum-verified and executed:
+`ssh-thing_1.1.38_macos-aarch64` → `shasum -a 256 -c` OK, and `version` reports
+`cli_version: 1.1.38` and `app_version: 1.1.38`. The app_version is the stamp
+written by the running app, so the new build is provably live.
+
+**One oddity worth recording:** the installed app already read `1.1.38` *before*
+the replacement step, and the app has **no auto-updater** (no updater plugin, no
+updater code in `src-tauri/` or the core crate). So that copy was put there by
+hand, not by the app updating itself. The replacement was still done from the
+published DMG, so the installed bundle is now byte-for-byte the released
+artifact — but if you installed it yourself, that is where it came from.
+
 ## Open decisions
 
 | # | Decision | Status |
@@ -422,8 +450,8 @@ build is provably the one running.
    into a session transcript. The value is deliberately not recorded in these
    docs. Rotate it.
 2. **Traps in this environment:**
-   - `release-builds/` still holds **1.1.32 and 1.1.35** DMGs alongside the
-     current **1.1.37** pair. The directory is gitignored, so the stale files
+   - `release-builds/` still holds **1.1.32, 1.1.35, and 1.1.37** DMGs alongside
+     the current **1.1.38** pair. The directory is gitignored, so the stale files
      never reach a release, but they make "which build is current?" ambiguous —
      read the version in the file name.
    - `docs/PRD-Automatic-Updates.md` and `docs/feature-research-roadmap-2026-03-06.md`
@@ -450,7 +478,7 @@ build is provably the one running.
 ## Things a fresh agent must not assume
 
 - **The installed app is now current.** `/Applications/SSH THING.app` is the
-  released **1.1.37**, installed from the published DMG on 2026-10-30. It is
+  released **1.1.38**, installed from the published DMG on 2026-10-30. It is
   the same code as `main`, so `npm run tauri dev` is only needed for
   unreleased work. Note that a dev build and the installed app **share one
   data directory and one keychain service**, so a dev session can rewrite
