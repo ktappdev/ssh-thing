@@ -4,7 +4,7 @@
 repository. If you are picking the project up cold, this file tells you where
 things stand.
 
-Last updated: **2026-10-29**, at app version **1.1.36**, tag **v1.1.36**. The tip
+Last updated: **2026-10-30**, at app version **1.1.36**, tag **v1.1.36**. The tip
 of `main` is the state of work; take its hash from `git log -1` instead of
 trusting a hash written here.
 
@@ -300,6 +300,49 @@ CLI, or storage changes.
   local `update-homebrew.sh` 404 during the release was the documented transient;
   the workflow's `update-homebrew` job updated the cask to 1.1.36.
 
+## Light-mode terminal contrast
+
+Switching the app to light mode left the terminal unreadable — near-white shell
+output on a near-white surface. The cause was a **state desync, not a colour
+choice**. `initTheme()` added `terminal-transparent` to `<body>` in dark mode,
+and CSS uses that class to drop the terminal's own dark surface so the app
+gradient shows through:
+
+```css
+.terminal-transparent .terminal-surface,
+.terminal-transparent #terminal-container { background: transparent !important; }
+```
+
+The theme toggle flipped the `dark` class on `<html>` but never removed that
+body class, so in light mode the terminal went transparent over the light app
+gradient while the foreground stayed light (`#e6e9ef`). xterm's own
+`theme.background` is irrelevant here: the repo CSS forces `.xterm` and
+`.xterm-viewport` transparent, so the container background is the only thing
+painting the terminal.
+
+The fix keeps the terminal dark in **both** themes, which is what
+`--terminal-bg: #0f111a` already said in both `:root` and `.dark`:
+
+- `frontend/main.js` — added `isDarkTheme()` and `applyTerminalSurface()`. Both
+  `initTheme()` and `toggleTheme()` now re-derive the `terminal-transparent`
+  body class from (theme, glass preference) instead of setting it once at
+  startup. `toggleTheme()` also re-syncs the header menu item, which used to go
+  stale.
+- Glass is now a **dark-mode-only** backdrop. The preference is kept rather than
+  consumed, so a light → dark switch restores it (it used to be reset to
+  `false` by any light-mode click). The header item is dimmed via
+  `aria-disabled`, its subtitle reads "Glass is available in dark mode", and
+  clicking it in light mode raises a toast instead of doing nothing silently.
+- `frontend/index.html` — `id` on the menu subtitle, plus the dimmed style for
+  `aria-disabled` menu items.
+
+Verified in a browser harness (a scratch copy of `frontend/` with a stubbed
+Tauri bridge, locally vendored xterm assets, and injected shell output):
+dark mode → glass terminal, readable; dark → light → terminal stays dark with
+readable light text while the chrome turns light; light → dark → glass comes
+back; fresh load in light mode → solid dark terminal. Gates: `node --check` on
+both changed files. No Rust, CLI, or storage changes.
+
 ## Open decisions
 
 | # | Decision | Status |
@@ -370,3 +413,9 @@ CLI, or storage changes.
   UI that is supposed to be the curation surface.
 - Do not run `release-tag.sh --allow-dirty` to work around uncommitted files;
   `AGENTS.md` explicitly calls that wrong.
+- The terminal is **intentionally dark in both themes**. `--terminal-bg` is
+  `#0f111a` in `:root` and in `.dark`; light mode changes the app chrome only.
+  Do not "fix" the light terminal by giving it a light surface — the terminal
+  foreground stays light, so a light surface puts white text on white again.
+  Glass (the transparent variant) is a dark-mode-only effect because it relies
+  on the dark app gradient behind the terminal.

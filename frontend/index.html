@@ -341,6 +341,17 @@
         background: rgba(137, 180, 250, 0.14);
       }
 
+      /* Theme-locked options (e.g. glass terminal in light mode) stay visible
+         but read as unavailable. */
+      .header-menu-item[aria-disabled="true"] {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
+      .header-menu-item[aria-disabled="true"]:hover {
+        background: transparent;
+      }
+
       .header-menu-item-main {
         display: flex;
         align-items: center;
@@ -1841,7 +1852,7 @@
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h2a1 1 0 011 1v16a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm14 0h2a1 1 0 011 1v16a1 1 0 01-1 1h-2a1 1 0 01-1-1V4a1 1 0 011-1zM7 12h10"/></svg>
                       <span class="header-menu-item-copy">
                         <span class="header-menu-item-title">Terminal background</span>
-                        <span class="header-menu-item-subtitle">Switch between solid and glass</span>
+                        <span id="header-terminal-bg-subtitle" class="header-menu-item-subtitle">Switch between solid and glass</span>
                       </span>
                     </span>
                     <span id="header-terminal-bg-label" class="header-menu-item-value">Glass</span>

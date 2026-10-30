@@ -195,15 +195,23 @@ async function confirmDeleteTarget() {
   }
 }
 
+function isDarkTheme() {
+  return document.documentElement.classList.contains("dark");
+}
+
+// The terminal keeps its own dark surface in every theme so remote output
+// stays readable; "glass" only drops that surface in dark mode.
+function applyTerminalSurface(isDark = isDarkTheme()) {
+  document.body.classList.toggle("terminal-transparent", terminalTransparent && isDark);
+}
+
 function initTheme() {
   const savedTheme = localStorage.getItem("theme");
   const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
   const isDark = savedTheme ? savedTheme === "dark" : prefersDark;
   document.documentElement.classList.toggle("dark", isDark);
   // Glass terminal is the default when in dark mode
-  if (isDark) {
-    document.body.classList.add("terminal-transparent");
-  }
+  applyTerminalSurface(isDark);
   syncThemeToggle(isDark);
   syncTerminalBackgroundToggle(isDark);
 }
@@ -215,13 +223,26 @@ function syncThemeToggle(isDark = document.documentElement.classList.contains("d
   toggle.setAttribute("title", isDark ? "Switch to light theme" : "Switch to dark theme");
 }
 
-function syncTerminalBackgroundToggle(isDark = document.documentElement.classList.contains("dark")) {
+function syncTerminalBackgroundToggle(isDark = isDarkTheme()) {
   const isGlass = terminalTransparent && isDark;
   const label = document.getElementById("header-terminal-bg-label");
   if (label) {
     label.textContent = isGlass ? "Glass" : "Solid";
   }
-  document.getElementById("terminal-bg-toggle")?.setAttribute("aria-checked", String(isGlass));
+  const toggle = document.getElementById("terminal-bg-toggle");
+  if (toggle) {
+    toggle.setAttribute("aria-checked", String(isGlass));
+    toggle.setAttribute("aria-disabled", String(!isDark));
+    toggle.title = isDark
+      ? "Toggle terminal background"
+      : "Glass background is available in dark mode";
+  }
+  const subtitle = document.getElementById("header-terminal-bg-subtitle");
+  if (subtitle) {
+    subtitle.textContent = isDark
+      ? "Switch between solid and glass"
+      : "Glass is available in dark mode";
+  }
 }
 
 function renderHostKeyPrompt(prompt) {
@@ -273,20 +294,26 @@ function drainHostKeyQueue() {
 function toggleTheme() {
   const isDark = document.documentElement.classList.toggle("dark");
   localStorage.setItem("theme", isDark ? "dark" : "light");
+  applyTerminalSurface(isDark);
   syncThemeToggle(isDark);
+  syncTerminalBackgroundToggle(isDark);
   sessionManager?.refreshTerminalTheme();
 }
 
 function toggleTerminalBackground() {
-  const isDark = document.documentElement.classList.contains("dark");
-  terminalTransparent = isDark ? !terminalTransparent : false;
-  document.body.classList.toggle("terminal-transparent", terminalTransparent && isDark);
+  const isDark = isDarkTheme();
+  if (!isDark) {
+    showToast("Glass background is available in dark mode", "info");
+    return;
+  }
+  terminalTransparent = !terminalTransparent;
+  applyTerminalSurface(isDark);
   syncTerminalBackgroundToggle(isDark);
   sessionManager?.refreshTerminalTheme();
 }
 
 function getTerminalTheme() {
-  const isDark = document.documentElement.classList.contains("dark");
+  const isDark = isDarkTheme();
   const background = !isDark ? "#0f111a" : (terminalTransparent ? "transparent" : "#0f111a");
   return {
     background,
