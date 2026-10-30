@@ -39,7 +39,7 @@
         --text-primary: #4c4f69;
         --text-secondary: #6c6f85;
         --border-color: #ccd0da;
-        --terminal-bg: #0f111a;
+        --terminal-bg: #ffffff;
         --space-1: 0.25rem;
         --space-2: 0.5rem;
         --space-3: 0.75rem;
@@ -457,15 +457,23 @@
         background: var(--terminal-bg);
         border-radius: 12px;
         box-shadow:
-          inset 0 14px 36px rgba(0, 0, 0, 0.36),
-          inset 0 -14px 40px rgba(0, 0, 0, 0.32),
-          0 22px 54px rgba(0, 0, 0, 0.28);
+          inset 0 12px 28px rgba(15, 23, 42, 0.05),
+          inset 0 -12px 32px rgba(15, 23, 42, 0.04),
+          0 18px 40px rgba(15, 23, 42, 0.12);
         border: 1px solid rgba(148, 163, 184, 0.38);
         display: flex;
         flex-direction: column;
         flex: 1 1 auto;
         min-height: 0;
         position: relative;
+      }
+
+      /* The dark vignette belongs to the dark terminal surface only. */
+      .dark #terminal-container {
+        box-shadow:
+          inset 0 14px 36px rgba(0, 0, 0, 0.36),
+          inset 0 -14px 40px rgba(0, 0, 0, 0.32),
+          0 22px 54px rgba(0, 0, 0, 0.28);
       }
 
       /* Drag-and-drop feedback while files hover the terminal. */

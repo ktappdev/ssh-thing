@@ -312,14 +312,44 @@ function toggleTerminalBackground() {
   sessionManager?.refreshTerminalTheme();
 }
 
+// The xterm default ANSI palette is tuned for a dark background: yellow, cyan,
+// and "white" text all wash out on a light one. These values keep every ANSI
+// color readable on the white light-mode terminal.
+const LIGHT_TERMINAL_COLORS = {
+  black: "#3d4152",
+  red: "#c02b3c",
+  green: "#2f7d32",
+  yellow: "#9a6b00",
+  blue: "#1e66f5",
+  magenta: "#a33b91",
+  cyan: "#0b6f77",
+  white: "#54576b",
+  brightBlack: "#7c7f93",
+  brightRed: "#d63b49",
+  brightGreen: "#3a9b3f",
+  brightYellow: "#b07d05",
+  brightBlue: "#3a78e8",
+  brightMagenta: "#c052a8",
+  brightCyan: "#0f8b94",
+  brightWhite: "#1c1f26",
+};
+
 function getTerminalTheme() {
   const isDark = isDarkTheme();
-  const background = !isDark ? "#0f111a" : (terminalTransparent ? "transparent" : "#0f111a");
+  if (isDark) {
+    return {
+      background: terminalTransparent ? "transparent" : "#0f111a",
+      foreground: "#cdd6f4",
+      cursor: "#f5c2e7",
+      selection: "rgba(148, 163, 184, 0.35)",
+    };
+  }
   return {
-    background,
-    foreground: isDark ? "#cdd6f4" : "#e6e9ef",
-    cursor: isDark ? "#f5c2e7" : "#82aaff",
-    selection: "rgba(148, 163, 184, 0.35)",
+    background: "#ffffff",
+    foreground: "#1c1f26",
+    cursor: "#1e66f5",
+    selection: "rgba(114, 135, 253, 0.25)",
+    ...LIGHT_TERMINAL_COLORS,
   };
 }
 
